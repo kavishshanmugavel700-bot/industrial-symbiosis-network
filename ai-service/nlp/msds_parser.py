@@ -1,4 +1,4 @@
-﻿"""
+"""
 nlp/msds_parser.py
 ------------------
 Parses a Material Safety Data Sheet (MSDS) PDF and extracts structured
@@ -7,6 +7,8 @@ chemical information for downstream compatibility scoring.
 Public API
 ----------
     parse_msds(pdf_path: str) -> dict
+    detect_hazmat(text: str, hazard_class=None) -> bool
+    detect_reuse_potential(text: str) -> str
 
 Run directly for a demo:
     python msds_parser.py
@@ -61,16 +63,33 @@ _UN_CLASS_PATTERN: re.Pattern = re.compile(
     r"\bUN\s*(?:Class|Hazard)?\s*([1-9](?:\.\d{1,2})?)\b", re.IGNORECASE
 )
 
-# Keywords that strongly indicate a hazardous material
-_HAZMAT_KEYWORDS: list[str] = [
-    "flammable", "explosive", "toxic", "corrosive", "oxidiser", "oxidizer",
-    "carcinogen", "mutagen", "teratogen", "poison", "radioactive",
-    "compressed gas", "self-reactive", "pyrophoric",
-]
+# Keywords that strongly indicate a hazardous material.
+# Uses a word-boundary compiled pattern (merged from compatibility_routes.py)
+# to avoid false positives like "non-hazardous" triggering "hazardous".
+import re as _re  # re already imported above; this alias silences duplicate-import warnings
+_HAZMAT_KW_PATTERN: "re.Pattern" = re.compile(
+    r"(?<![\w-])(?:"
+    r"flammable|explosive|(?<!non[-\s])toxic|corrosive|oxidis[ei]r|oxidizer|"
+    r"carcinogen|mutagen|teratogen|poison|radioactive|compressed\s+gas|"
+    r"self[-\s]reactive|pyrophoric|(?<!non[-\s])hazardous"
+    r")(?![\w-])",
+    re.IGNORECASE,
+)
+
+# Reuse-positive and reuse-negative signal words (merged from compatibility_routes.py)
+_REUSE_HIGH_KEYWORDS: tuple = (
+    "reusable", "recoverable", "recyclable", "non-hazardous", "non hazardous",
+    "safe for reuse", "biodegradable", "food grade", "industrial grade",
+)
+_REUSE_LOW_KEYWORDS: tuple = (
+    "carcinogen", "mutagen", "teratogen", "persistent", "bioaccumulat",
+    "highly toxic", "acutely toxic", "environmentally hazardous",
+)
 
 # Flash-point and pH extraction helpers
 _FLASH_POINT_PATTERN: re.Pattern = re.compile(
-    r"flash\s+point\s*[:\-]?\s*([\-\d\.]+)\s* deg?[cC]", re.IGNORECASE
+    r"flash\s+point\s*[:\-]?\s*([\-\d\.]+)\s*(?:deg(?:\s+C|C)|\u00b0C|\bC\b)",
+    re.IGNORECASE,
 )
 _PH_PATTERN: re.Pattern = re.compile(
     r"\bpH\s*[:\-]?\s*([\d\.]+)\s*(?:to|[--])\s*([\d\.]+)|\bpH\s*[:\-]?\s*([\d\.]+)",
@@ -196,25 +215,35 @@ def _extract_hazard_class(text: str) -> Optional[str]:
     return ", ".join(found) if found else None
 
 
-def _detect_hazmat(text: str, hazard_class: Optional[str]) -> bool:
+def detect_hazmat(text: str, hazard_class: Optional[str] = None) -> bool:
     """
     Determine whether the material should be classified as hazardous.
 
+    Public function — single source of truth for hazmat detection used by
+    both parse_msds() and the /compatibility/score route.
+
     A material is considered hazardous if:
     - At least one GHS hazard code or UN class was found, OR
-    - The text contains one or more hazmat keywords.
+    - The text matches the hazmat keyword pattern (with negative lookbehind
+      to avoid false positives like "non-hazardous" → "hazardous").
 
     Args:
         text:         Full raw text from the MSDS PDF.
-        hazard_class: Output of _extract_hazard_class().
+        hazard_class: Optional output of _extract_hazard_class().
 
     Returns:
         True if hazardous, False otherwise.
     """
+    # hazard_class overrides everything — check it first before any text guard
     if hazard_class:
         return True
-    text_lower = text.lower()
-    return any(kw in text_lower for kw in _HAZMAT_KEYWORDS)
+    if not text:
+        return False
+    # Also check for GHS codes directly in text
+    if _GHS_HAZARD_PATTERN.search(text):
+        return True
+    # Keyword scan with negative-lookbehind (avoids "non-hazardous" false positives)
+    return bool(_HAZMAT_KW_PATTERN.search(text))
 
 
 def _parse_flash_point(text: str) -> Optional[float]:
@@ -265,26 +294,37 @@ def _calculate_reuse_potential(
     is_hazmat: bool,
     flash_point: Optional[float],
     ph: Optional[float],
+    text: str = "",
 ) -> str:
     """
     Determine the reuse potential category based on hazard signals and
     chemical properties.
 
-    Rules:
-    - LOW  : is_hazmat is True AND (flash_point < 60 or extreme pH)
-    - HIGH : not hazmat AND (flash_point > 60 OR pH in neutral range 6-8)
-    - MEDIUM: all other cases
+    Rules (in order of precedence):
+    - LOW    : Text contains reuse-negative keywords (carcinogen, highly toxic…)
+               regardless of other signals.
+    - LOW    : is_hazmat AND (flash_point < 23 or extreme pH < 2 or > 12)
+    - HIGH   : Reuse-positive keywords (reusable, recyclable…) OR
+               (flash_point > 60 AND/OR pH in neutral range 6-8)
+    - MEDIUM : All other cases.
 
     Args:
         is_hazmat:   Whether GHS/UN hazmat signals were found.
-        flash_point: Flash point in  degC, or None.
+        flash_point: Flash point in degC, or None.
         ph:          pH value, or None.
+        text:        Raw MSDS text for keyword scanning (optional).
 
     Returns:
         One of "HIGH", "MEDIUM", or "LOW".
     """
+    text_lower = text.lower() if text else ""
+
+    # Serious hazard keywords → always LOW regardless of physical props
+    if any(kw in text_lower for kw in _REUSE_LOW_KEYWORDS):
+        return "LOW"
+
     if is_hazmat:
-        # Still check for minor vs serious hazmat
+        # Check for highly dangerous physical properties
         dangerous = False
         if flash_point is not None and flash_point < 23:  # highly flammable
             dangerous = True
@@ -292,13 +332,53 @@ def _calculate_reuse_potential(
             dangerous = True
         return "LOW" if dangerous else "MEDIUM"
 
-    # Not hazmat - assess based on physical properties
-    favourable = False
-    if flash_point is not None and flash_point > 60:
-        favourable = True
-    if ph is not None and 6.0 <= ph <= 8.0:
-        favourable = True
-    return "HIGH" if favourable else "MEDIUM"
+    # Not hazmat — assess reuse-positive signals
+    has_positive_kw = any(kw in text_lower for kw in _REUSE_HIGH_KEYWORDS)
+    has_favourable_props = (
+        (flash_point is not None and flash_point > 60)
+        or (ph is not None and 6.0 <= ph <= 8.0)
+    )
+    return "HIGH" if (has_positive_kw or has_favourable_props) else "MEDIUM"
+
+
+def detect_reuse_potential(text: str) -> str:
+    """
+    Infer the reuse potential category from raw MSDS text.
+
+    Public function — single source of truth used by both parse_msds() and
+    the /compatibility/score route (delegates to _calculate_reuse_potential).
+
+    Args:
+        text: Raw MSDS text (may be multi-line, mixed case).
+
+    Returns:
+        One of "HIGH", "MEDIUM", or "LOW".
+    """
+    if not text:
+        return "MEDIUM"
+
+    flash_point: Optional[float] = None
+    fp_match = _FLASH_POINT_PATTERN.search(text)
+    if fp_match:
+        try:
+            flash_point = float(fp_match.group(1))
+        except (ValueError, TypeError):
+            pass
+
+    ph: Optional[float] = None
+    ph_match = _PH_PATTERN.search(text)
+    if ph_match:
+        try:
+            if ph_match.group(1) and ph_match.group(2):
+                ph = (float(ph_match.group(1)) + float(ph_match.group(2))) / 2
+            else:
+                val = ph_match.group(1) or ph_match.group(3)
+                ph = float(val) if val else None
+        except (ValueError, TypeError):
+            pass
+
+    is_haz = detect_hazmat(text)
+    return _calculate_reuse_potential(is_haz, flash_point, ph, text)
 
 
 # ---------------------------------------------------------------------------
@@ -335,10 +415,10 @@ def parse_msds(pdf_path: str) -> dict:
         material_name       = _extract_material_name(raw_text)
         chemical_properties = _extract_chemical_properties(raw_text)
         hazard_class        = _extract_hazard_class(raw_text)
-        is_hazmat           = _detect_hazmat(raw_text, hazard_class)
+        is_hazmat           = detect_hazmat(raw_text, hazard_class)
         flash_point         = _parse_flash_point(raw_text)
         ph                  = _parse_ph(raw_text)
-        reuse_potential     = _calculate_reuse_potential(is_hazmat, flash_point, ph)
+        reuse_potential     = _calculate_reuse_potential(is_hazmat, flash_point, ph, raw_text)
 
         return {
             "material_name":       material_name,
@@ -398,10 +478,10 @@ if __name__ == "__main__":
     material_name       = _extract_material_name(SAMPLE_MSDS_TEXT)
     chemical_properties = _extract_chemical_properties(SAMPLE_MSDS_TEXT)
     hazard_class        = _extract_hazard_class(SAMPLE_MSDS_TEXT)
-    is_hazmat           = _detect_hazmat(SAMPLE_MSDS_TEXT, hazard_class)
+    is_hazmat           = detect_hazmat(SAMPLE_MSDS_TEXT, hazard_class)
     flash_point         = _parse_flash_point(SAMPLE_MSDS_TEXT)
     ph                  = _parse_ph(SAMPLE_MSDS_TEXT)
-    reuse_potential     = _calculate_reuse_potential(is_hazmat, flash_point, ph)
+    reuse_potential     = _calculate_reuse_potential(is_hazmat, flash_point, ph, SAMPLE_MSDS_TEXT)
 
     result = {
         "material_name":       material_name,

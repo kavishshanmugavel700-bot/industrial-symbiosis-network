@@ -8,6 +8,7 @@ Registered prefix: /compatibility
 
 Routes
 ------
+    POST /compatibility/parse-msds         -- NEW: MSDS PDF upload and parsing
     POST /compatibility/score
     POST /compatibility/rank-buyers
     POST /compatibility/rank-buyers-smart
@@ -16,18 +17,22 @@ Run directly (starts a dev server on port 5001):
     python compatibility_routes.py
 """
 
+import os
 import re
+import tempfile
 from flask import Blueprint, request, jsonify, Response
 
 # Internal imports (relative, assuming the project runs from ai-service/)
 try:
     from models.compatibility_scorer import CompatibilityScorer, rank_buyers_by_compatibility
     from models.buyer_ranking import rank_buyers_smart
+    from nlp.msds_parser import parse_msds, detect_hazmat, detect_reuse_potential
 except ImportError:
-    import sys, os  # noqa: E401
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+    import sys, os as _os  # noqa: E401
+    sys.path.insert(0, _os.path.join(_os.path.dirname(__file__), ".."))
     from models.compatibility_scorer import CompatibilityScorer, rank_buyers_by_compatibility
     from models.buyer_ranking import rank_buyers_smart
+    from nlp.msds_parser import parse_msds, detect_hazmat, detect_reuse_potential
 
 # ---------------------------------------------------------------------------
 # Blueprint registration
@@ -40,52 +45,26 @@ _scorer = CompatibilityScorer()
 
 
 # ---------------------------------------------------------------------------
-# Text-analysis helpers (no model loading - pure keyword scanning)
+# Text-analysis helpers — thin wrappers around nlp/msds_parser.py
+# (Gap 2: msds_parser.py is the single source of truth for these signals;
+#  the implementations here were merged into the shared module and deleted)
 # ---------------------------------------------------------------------------
 
-# GHS hazard codes and keyword signals
-_HAZMAT_GHS_PATTERN: re.Pattern = re.compile(
-    r"\b(H[2-4]\d{2}[A-Za-z]?)\b", re.IGNORECASE
-)
-# Compiled word-boundary pattern avoids false positives like "non-hazardous"
-_HAZMAT_KW_PATTERN: re.Pattern = re.compile(
-    r"(?<![\w-])(?:"
-    r"flammable|explosive|(?<!non[-\s])toxic|corrosive|oxidis[ei]r|oxidizer|"
-    r"carcinogen|mutagen|poison|radioactive|compressed\s+gas|"
-    r"pyrophoric|self[-\s]reactive|(?<!non[-\s])hazardous"
-    r")(?![\w-])",
-    re.IGNORECASE,
-)
-
-# Reuse-positive and reuse-negative signal words
-_REUSE_HIGH_KEYWORDS: tuple[str, ...] = (
-    "reusable", "recoverable", "recyclable", "non-hazardous", "non hazardous",
-    "safe for reuse", "biodegradable", "food grade", "industrial grade",
-)
-_REUSE_LOW_KEYWORDS: tuple[str, ...] = (
-    "carcinogen", "mutagen", "teratogen", "persistent", "bioaccumulat",
-    "highly toxic", "acutely toxic", "environmentally hazardous",
-)
-
-# Flash-point extractor — accepts both '°C' and 'deg C' forms
+# Flash-point extractor kept here only for the /score route's flash-point logging;
+# actual hazmat/reuse decisions now go through the shared msds_parser functions.
 _FLASH_POINT_PATTERN: re.Pattern = re.compile(
     r"flash\s+point\s*[:\-]?\s*([\-\d\.]+)\s*(?:deg\s*C|[\u00b0]C|C)\b",
-    re.IGNORECASE,
-)
-_PH_PATTERN: re.Pattern = re.compile(
-    r"\bpH\s*[:\-]?\s*([\d\.]+)\s*(?:to|[-])\s*([\d\.]+)|\bpH\s*[:\-]?\s*([\d\.]+)",
     re.IGNORECASE,
 )
 
 
 def detect_hazmat_from_text(text: str) -> bool:
     """
-    Determine whether MSDS text indicates a hazardous material using simple
-    keyword and GHS-code scanning - no NLP model required.
+    Determine whether MSDS text indicates a hazardous material.
 
-    Signals checked:
-    - Presence of GHS hazard statement codes (H2xx, H3xx, H4xx).
-    - Presence of one or more hazmat keywords (flammable, toxic, etc.).
+    Thin wrapper — delegates to ``nlp.msds_parser.detect_hazmat`` which is the
+    single source of truth (Gap 2 fix).  Kept here so existing callers inside
+    this module do not need renaming.
 
     Args:
         text: Raw MSDS text (may be multi-line, mixed case).
@@ -93,28 +72,16 @@ def detect_hazmat_from_text(text: str) -> bool:
     Returns:
         True if hazardous signals are found, False otherwise.
     """
-    if not text:
-        return False
-
-    # Check for GHS codes
-    if _HAZMAT_GHS_PATTERN.search(text):
-        return True
-
-    # Check for keyword matches using word-boundary regex
-    # (avoids false positives like 'non-hazardous' triggering 'hazardous')
-    return bool(_HAZMAT_KW_PATTERN.search(text))
+    return detect_hazmat(text)
 
 
 def detect_reuse_from_text(text: str) -> str:
     """
-    Infer the reuse potential category from MSDS text using keyword heuristics.
+    Infer the reuse potential category from MSDS text.
 
-    Rules (in order of precedence):
-    1. LOW:    Text contains one or more reuse-negative keywords (carcinogen,
-               persistent, highly toxic, etc.) regardless of other signals.
-    2. HIGH:   Text contains reuse-positive keywords (reusable, recyclable ...)
-               OR flash point > 60  degC AND pH in neutral range [6, 8].
-    3. MEDIUM: Default when no strong signal is found.
+    Thin wrapper — delegates to ``nlp.msds_parser.detect_reuse_potential`` which
+    is the single source of truth (Gap 2 fix).  Kept here so existing callers
+    inside this module do not need renaming.
 
     Args:
         text: Raw MSDS text (may be multi-line, mixed case).
@@ -122,47 +89,87 @@ def detect_reuse_from_text(text: str) -> str:
     Returns:
         One of "HIGH", "MEDIUM", or "LOW".
     """
-    if not text:
-        return "MEDIUM"
+    return detect_reuse_potential(text)
 
-    text_lower = text.lower()
 
-    # 1. Low reuse - serious hazard signals
-    if any(kw in text_lower for kw in _REUSE_LOW_KEYWORDS):
-        return "LOW"
+# ---------------------------------------------------------------------------
+# Route 0: POST /compatibility/parse-msds   (Gap 1 — NEW)
+# ---------------------------------------------------------------------------
 
-    # 2. High reuse - positive keyword or favourable physical properties
-    has_positive_kw = any(kw in text_lower for kw in _REUSE_HIGH_KEYWORDS)
+@compatibility_bp.route("/parse-msds", methods=["POST"])
+def parse_msds_route() -> tuple[Response, int]:
+    """
+    Accept a multipart/form-data PDF upload, parse the MSDS, and return
+    structured chemical information as JSON.
 
-    flash_point: float | None = None
-    fp_match = _FLASH_POINT_PATTERN.search(text)
-    if fp_match:
-        try:
-            flash_point = float(fp_match.group(1))
-        except (ValueError, TypeError):
-            pass
+    This endpoint is the platform's advertised MSDS PDF upload entry point.
+    The Node.js backend should forward the file from a multer (or equivalent)
+    file-upload route to this endpoint.
 
-    ph: float | None = None
-    ph_match = _PH_PATTERN.search(text)
-    if ph_match:
-        try:
-            if ph_match.group(1) and ph_match.group(2):
-                ph = (float(ph_match.group(1)) + float(ph_match.group(2))) / 2
-            else:
-                val = ph_match.group(1) or ph_match.group(3)
-                ph = float(val) if val else None
-        except (ValueError, TypeError):
-            pass
+    Request:
+        multipart/form-data  field name: "file"  (PDF)
 
-    has_favourable_props = (
-        (flash_point is not None and flash_point > 60)
-        or (ph is not None and 6.0 <= ph <= 8.0)
-    )
+    Response JSON (200):
+        {
+            "material_name":       str,
+            "chemical_properties": dict,
+            "isHazmat":            bool,
+            "hazard_class":        str | null,
+            "reuse_potential":     str,   // "HIGH" | "MEDIUM" | "LOW"
+            "raw_text":            str
+        }
 
-    if has_positive_kw or has_favourable_props:
-        return "HIGH"
+    Error responses:
+        400: No file uploaded, wrong field name, or empty file.
+        500: Unexpected server error during parsing.
+    """
+    # -- Validate upload ------------------------------------------------------
+    if "file" not in request.files:
+        return (
+            jsonify({"error": "No file field in request. Expected multipart/form-data with field name 'file'."}),
+            400,
+        )
 
-    return "MEDIUM"
+    uploaded_file = request.files["file"]
+    if uploaded_file.filename == "" or not uploaded_file.filename:
+        return (
+            jsonify({"error": "Uploaded file has no filename. Send a valid PDF."}),
+            400,
+        )
+
+    # -- Save to temp file, parse, clean up -----------------------------------
+    tmp_path: str | None = None
+    try:
+        # Write to a named temp file so pdfplumber can open it by path
+        suffix = os.path.splitext(uploaded_file.filename or "")[-1] or ".pdf"
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            uploaded_file.save(tmp)
+            tmp_path = tmp.name
+
+        result = parse_msds(tmp_path)
+
+        # parse_msds returns _DEFAULT_RESULT on total failure (material_name == "Unknown",
+        # raw_text == "").  Treat that as a parse failure and return 400.
+        if result.get("raw_text", "") == "" and result.get("material_name") == "Unknown":
+            return (
+                jsonify({"error": "Could not extract text from the uploaded PDF. Ensure it is a text-layer PDF, not a scanned image."}),
+                400,
+            )
+
+        return jsonify(result), 200
+
+    except Exception as exc:
+        return (
+            jsonify({"error": f"Unexpected error during MSDS parsing: {str(exc)}"}),
+            500,
+        )
+    finally:
+        # Always clean up the temp file
+        if tmp_path and os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass  # best-effort cleanup
 
 
 # ---------------------------------------------------------------------------
@@ -480,9 +487,15 @@ if __name__ == "__main__":
     print("=" * 60)
     print("\n  Starting Flask dev server on http://127.0.0.1:5001")
     print("  Available endpoints:")
+    print("    POST /compatibility/parse-msds")
     print("    POST /compatibility/score")
     print("    POST /compatibility/rank-buyers")
     print("    POST /compatibility/rank-buyers-smart")
+    print("\n  Example cURL (parse-msds):")
+    print(
+        '    curl -s -X POST http://127.0.0.1:5001/compatibility/parse-msds \\\n'
+        '         -F "file=@nlp/sample_msds/hazmat_solvent.pdf"'
+    )
     print("\n  Example cURL (score):")
     print(
         '    curl -s -X POST http://127.0.0.1:5001/compatibility/score \\\n'
