@@ -23,6 +23,7 @@ load_dotenv()
 # Blueprint imports
 # ---------------------------------------------------------------------------
 from routes.compatibility_routes import compatibility_bp
+from routes.predict_routes import predict_bp
 
 # ---------------------------------------------------------------------------
 # App factory
@@ -43,6 +44,9 @@ def create_app() -> Flask:
     # -- Register blueprints -------------------------------------------------
     # Role 4 (AI/Data): compatibility scoring and buyer ranking
     app.register_blueprint(compatibility_bp)
+
+    # Role 3 (AI Lead): surplus prediction
+    app.register_blueprint(predict_bp)
 
     # -- Health check --------------------------------------------------------
     @app.get("/health")
@@ -72,4 +76,6 @@ if __name__ == "__main__":
     print("         GET  /health")
     print("         POST /compatibility/score")
     print("         POST /compatibility/rank-buyers")
+    print("         POST /compatibility/rank-buyers-smart")
+    print("         POST /predict/surplus")
     app.run(host="0.0.0.0", port=port, debug=debug)

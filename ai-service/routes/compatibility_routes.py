@@ -10,6 +10,7 @@ Routes
 ------
     POST /compatibility/score
     POST /compatibility/rank-buyers
+    POST /compatibility/rank-buyers-smart
 
 Run directly (starts a dev server on port 5001):
     python compatibility_routes.py
@@ -21,10 +22,12 @@ from flask import Blueprint, request, jsonify, Response
 # Internal imports (relative, assuming the project runs from ai-service/)
 try:
     from models.compatibility_scorer import CompatibilityScorer, rank_buyers_by_compatibility
+    from models.buyer_ranking import rank_buyers_smart
 except ImportError:
     import sys, os  # noqa: E401
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
     from models.compatibility_scorer import CompatibilityScorer, rank_buyers_by_compatibility
+    from models.buyer_ranking import rank_buyers_smart
 
 # ---------------------------------------------------------------------------
 # Blueprint registration
@@ -343,6 +346,129 @@ def rank_buyers() -> tuple[Response, int]:
 
 
 # ---------------------------------------------------------------------------
+# Route 3: POST /compatibility/rank-buyers-smart
+# ---------------------------------------------------------------------------
+
+@compatibility_bp.route("/rank-buyers-smart", methods=["POST"])
+def rank_buyers_advanced() -> tuple[Response, int]:
+    """
+    Rank a list of potential buyer factories using a four-factor composite
+    score that extends Role 4's baseline ranker with surplus prediction
+    confidence from the RandomForest model (Role 3).
+
+    Four factors (weights):
+        compatibility (40%) + proximity (25%) + trust (15%) + confidence (20%)
+
+    Request JSON:
+        {
+            "sellerFactoryId": int,   // required — used to call predict_surplus
+            "sellerMaterial":  str,   // e.g. "chemical_solvent"
+            "sellerLat":       float, // seller latitude
+            "sellerLon":       float, // seller longitude
+            "buyerFactories":  [      // list of buyer dicts
+                {
+                    "factory_id":          int,
+                    "needs_material_type": str,
+                    "latitude":            float,
+                    "longitude":           float,
+                    "trust_score":         float   // 0-100
+                },
+                ...
+            ],
+            "productionSchedule": {}  // optional — forwarded to predict_surplus
+        }
+
+    Response JSON (200):
+        {
+            "rankedBuyers": [
+                {
+                    "factoryId":          int,
+                    "compatibilityScore": float,
+                    "distanceKm":         float,
+                    "confidenceScore":    float,   // seller model confidence 0-1
+                    "totalScore":         float
+                },
+                ...
+            ],
+            "predictionConfidence": float,  // seller-level confidence (0-1)
+            "materialType":         str,    // resolved from predict_surplus
+            "predictedSurplusDate": str     // ISO 8601 UTC
+        }
+
+    Error responses:
+        400: Missing required fields or invalid JSON.
+        500: Unexpected server error.
+    """
+    # -- Parse request --------------------------------------------------------
+    try:
+        payload = request.get_json(force=True, silent=True)
+    except Exception:
+        payload = None
+
+    if not payload:
+        return (
+            jsonify({"error": "Request body must be valid JSON."}),
+            400,
+        )
+
+    # Validate required fields
+    missing = [
+        field for field in ("sellerFactoryId", "sellerMaterial", "sellerLat", "sellerLon", "buyerFactories")
+        if field not in payload
+    ]
+    if missing:
+        return (
+            jsonify({"error": f"Missing required field(s): {', '.join(missing)}"}),
+            400,
+        )
+
+    seller_factory_id = payload["sellerFactoryId"]
+    seller_material: str = payload["sellerMaterial"]
+    buyer_factories: list = payload["buyerFactories"]
+    production_schedule: dict = payload.get("productionSchedule") or {}
+
+    try:
+        seller_lat = float(payload["sellerLat"])
+        seller_lon = float(payload["sellerLon"])
+    except (TypeError, ValueError):
+        return (
+            jsonify({"error": "'sellerLat' and 'sellerLon' must be numeric values."}),
+            400,
+        )
+
+    if not isinstance(buyer_factories, list):
+        return (
+            jsonify({"error": "'buyerFactories' must be a JSON array."}),
+            400,
+        )
+
+    # -- Rank -----------------------------------------------------------------
+    try:
+        result = rank_buyers_smart(
+            seller_factory_id,
+            seller_material,
+            buyer_factories,
+            seller_lat,
+            seller_lon,
+            production_schedule=production_schedule,
+        )
+        return (
+            jsonify(result),
+            200,
+        )
+    except KeyError as exc:
+        return (
+            jsonify({"error": f"Unknown sellerFactoryId: {str(exc)}"}),
+            400,
+        )
+    except Exception as exc:
+        return (
+            jsonify({"error": f"Internal smart-ranking error: {str(exc)}"}),
+            500,
+        )
+
+
+# ---------------------------------------------------------------------------
 # Demo / entry point (standalone dev server)
 # ---------------------------------------------------------------------------
 
@@ -356,6 +482,7 @@ if __name__ == "__main__":
     print("  Available endpoints:")
     print("    POST /compatibility/score")
     print("    POST /compatibility/rank-buyers")
+    print("    POST /compatibility/rank-buyers-smart")
     print("\n  Example cURL (score):")
     print(
         '    curl -s -X POST http://127.0.0.1:5001/compatibility/score \\\n'

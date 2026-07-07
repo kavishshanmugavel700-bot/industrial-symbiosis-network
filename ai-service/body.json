@@ -1,0 +1,1 @@
+{"sellerFactoryId": 1, "sellerMaterial": "chemical_solvent", "sellerLat": 25.0269, "sellerLon": 121.6013, "buyerFactories": [{"factory_id": 4, "needs_material_type": "plastic_offcut", "latitude": 22.6405, "longitude": 120.3272, "trust_score": 85.0}]}
