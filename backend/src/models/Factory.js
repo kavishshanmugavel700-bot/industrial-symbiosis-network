@@ -41,6 +41,35 @@ const Factory = {
     );
     return rows[0];
   },
+
+  /**
+   * Find all factories whose production_schedule JSONB field contains a
+   * 'needs_material_type' key matching the given value.
+   *
+   * This is used by the marketplace controller to build the buyerFactories
+   * list before calling the AI ranking service.
+   *
+   * @param {string} needsMaterialType - The material type the buyer needs.
+   * @returns {Promise<Array>} Array of factory rows (may be empty).
+   */
+  async findByNeedsMaterial(needsMaterialType) {
+    const { rows } = await query(
+      `SELECT id AS factory_id,
+              name,
+              industry_type,
+              latitude,
+              longitude,
+              trust_score,
+              production_schedule->>'needs_material_type' AS needs_material_type
+       FROM factories
+       WHERE production_schedule->>'needs_material_type' = $1
+         AND latitude  IS NOT NULL
+         AND longitude IS NOT NULL`,
+      [needsMaterialType]
+    );
+    return rows;
+  },
 };
+
 
 module.exports = Factory;

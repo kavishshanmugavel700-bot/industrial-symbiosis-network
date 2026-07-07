@@ -16,14 +16,28 @@ async function predictSurplus({ factoryId, productionSchedule }) {
 
 /**
  * Calls the AI service to rank candidate buyers for a given listing.
- * Expected contract (coordinate with Role 3):
- *   POST /rank/buyers  { listingId, materialType, sellerLat, sellerLon }
- *   -> { rankedBuyers: [{ factoryId, compatibilityScore }, ...] }
+ * Contract (Role 4 — compatibility_routes.py):
+ *   POST /compatibility/rank-buyers
+ *   Body: { sellerMaterial, sellerLat, sellerLon, buyerFactories }
+ *   -> { rankedBuyers: [{ factoryId, compatibilityScore, distanceKm, totalScore }, ...] }
+ *
+ * @param {object} params
+ * @param {string}   params.sellerMaterial  - Material type the seller has surplus of.
+ * @param {number}   params.sellerLat       - Seller factory latitude.
+ * @param {number}   params.sellerLon       - Seller factory longitude.
+ * @param {Array}    params.buyerFactories  - Candidate buyer factories from the DB.
+ * @returns {Promise<Array>} Ranked buyer list (empty array on failure).
  */
-async function rankBuyers({ listingId, materialType, sellerLat, sellerLon }) {
-  const { data } = await client.post('/rank/buyers', { listingId, materialType, sellerLat, sellerLon });
+async function rankBuyers({ sellerMaterial, sellerLat, sellerLon, buyerFactories }) {
+  const { data } = await client.post('/compatibility/rank-buyers', {
+    sellerMaterial,
+    sellerLat,
+    sellerLon,
+    buyerFactories,
+  });
   return data.rankedBuyers || [];
 }
+
 
 /**
  * Calls the AI service's NLP compatibility scorer for an uploaded MSDS.
