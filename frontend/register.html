@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Register - ISIN Taiwan</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body style="min-height: 100vh; display: flex; flex-direction: column;">
+
+  <!-- Navigation -->
+  <header>
+    <div class="nav-container">
+      <a href="index.html" class="logo" id="nav-logo">
+        <svg viewBox="0 0 24 24">
+          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H7c0-2.76 2.24-5 5-5s5 2.24 5 5c0 1.04-.42 1.99-1.07 2.75z"/>
+        </svg>
+        <span>ISIN Taiwan</span>
+      </a>
+      <nav>
+        <ul class="nav-links">
+          <li><a href="index.html">Home</a></li>
+          <li><a href="marketplace.html">Marketplace</a></li>
+        </ul>
+      </nav>
+      <div class="nav-auth">
+        <!-- Dyn -->
+      </div>
+    </div>
+  </header>
+
+  <!-- Register Form Section -->
+  <main style="display: flex; align-items: center; justify-content: center; padding-top: 3rem; padding-bottom: 3rem;">
+    <div class="card" style="max-width: 550px; width: 100%; box-shadow: var(--shadow-lg);">
+      <div style="text-align: center; margin-bottom: 2rem;">
+        <h2 style="font-size: 1.8rem; font-weight: 700; color: var(--clr-text-main);">Create your account</h2>
+        <p style="font-size: 0.9rem; color: var(--clr-text-muted); margin-top: 0.2rem;">Join Taiwan's AI Industrial Symbiosis network</p>
+      </div>
+
+      <!-- Inline error container -->
+      <div id="error-box" style="display: none; background-color: #fef2f2; border: 1px solid #fee2e2; color: var(--clr-error); padding: 0.75rem 1rem; border-radius: var(--radius-md); font-size: 0.9rem; margin-bottom: 1.5rem; font-weight: 500;">
+      </div>
+
+      <form id="register-form">
+        <!-- Core Login Credentials -->
+        <div class="form-group">
+          <label for="email">Work Email</label>
+          <input type="email" id="email" class="form-control" placeholder="name@company.com" required autocomplete="username">
+        </div>
+        <div class="form-group">
+          <label for="password">Password</label>
+          <input type="password" id="password" class="form-control" placeholder="Minimum 6 characters" required autocomplete="new-password">
+        </div>
+
+        <div class="form-group">
+          <label for="role">Role Type</label>
+          <select id="role" class="form-control">
+            <option value="factory" selected>Factory Owner (Waste Supplier)</option>
+            <option value="buyer">Buyer (Material Consumer)</option>
+            <option value="admin">Government Administrator</option>
+          </select>
+        </div>
+
+        <!-- Factory Specific Info Details (Shown dynamically) -->
+        <div id="factory-info-section">
+          <div class="form-group">
+            <label for="factoryName">Factory Name</label>
+            <input type="text" id="factoryName" class="form-control" placeholder="e.g. Taiwan Semiconductor Recycling Inc.">
+          </div>
+
+          <div class="form-group">
+            <label for="industryType">Industry Sector</label>
+            <select id="industryType" class="form-control">
+              <option value="electronics" selected>Electronics & Semiconductors</option>
+              <option value="chemical">Chemical Manufacturing</option>
+              <option value="textile">Textiles & Apparel</option>
+              <option value="metal">Metal Processing</option>
+              <option value="plastics">Plastics & Polymers</option>
+              <option value="paper">Paper & Packaging</option>
+            </select>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="latitude">Latitude</label>
+              <input type="number" step="any" id="latitude" class="form-control" placeholder="e.g. 25.033">
+            </div>
+            <div class="form-group">
+              <label for="longitude">Longitude</label>
+              <input type="number" step="any" id="longitude" class="form-control" placeholder="e.g. 121.564">
+            </div>
+          </div>
+          <span class="form-text" style="margin-bottom: 1.5rem;">
+            Note: For demo purposes, coordinates will fall back to Hsinchu Science Park default if left blank.
+          </span>
+        </div>
+
+        <button type="submit" id="submit-btn" class="btn btn-primary" style="width: 100%;">
+          Register Account
+        </button>
+      </form>
+
+      <div style="text-align: center; margin-top: 1.5rem; font-size: 0.9rem; color: var(--clr-text-muted);">
+        Already have an account? <a href="login.html" style="color: var(--clr-primary); font-weight: 600; text-decoration: none;">Login here</a>
+      </div>
+    </div>
+  </main>
+
+  <!-- Footer -->
+  <footer>
+    <p>&copy; 2026 Industrial Symbiosis Intelligence Network (ISIN). All rights reserved.</p>
+  </footer>
+
+  <script src="js/api.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/notifications.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const roleSelect = document.getElementById('role');
+      const factorySection = document.getElementById('factory-info-section');
+      const form = document.getElementById('register-form');
+      const errorBox = document.getElementById('error-box');
+      const submitBtn = document.getElementById('submit-btn');
+
+      // Toggle factory section based on selected role
+      roleSelect.addEventListener('change', () => {
+        if (roleSelect.value === 'admin') {
+          factorySection.style.display = 'none';
+          document.getElementById('factoryName').removeAttribute('required');
+        } else {
+          factorySection.style.display = 'block';
+        }
+      });
+
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        errorBox.style.display = 'none';
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Registering...';
+
+        const email = document.getElementById('email').value;
+        const password = document.getElementById('password').value;
+        const role = roleSelect.value;
+
+        const payload = { email, password, role };
+
+        if (role !== 'admin') {
+          payload.factoryName = document.getElementById('factoryName').value || undefined;
+          payload.industryType = document.getElementById('industryType').value || undefined;
+          
+          const lat = document.getElementById('latitude').value;
+          const lon = document.getElementById('longitude').value;
+          
+          payload.latitude = lat ? Number(lat) : undefined;
+          payload.longitude = lon ? Number(lon) : undefined;
+        }
+
+        try {
+          const res = await apiFetch('/api/auth/register', {
+            method: 'POST',
+            body: JSON.stringify(payload)
+          });
+
+          // Store authentication session data
+          auth.setSession(res.token, res.user, res.factory);
+          notifications.showSuccess('Registration successful!');
+
+          setTimeout(() => {
+            if (res.user.role === 'admin') {
+              window.location.href = 'gov-dashboard.html';
+            } else {
+              window.location.href = 'marketplace.html';
+            }
+          }, 1000);
+
+        } catch (err) {
+          errorBox.textContent = err.message || 'Registration failed. Please check your data.';
+          errorBox.style.display = 'block';
+          notifications.showError(err.message || 'Registration failed.');
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Register Account';
+        }
+      });
+    });
+  </script>
+</body>
+</html>
