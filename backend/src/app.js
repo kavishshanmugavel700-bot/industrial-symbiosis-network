@@ -8,6 +8,7 @@ const factoryRoutes = require('./routes/factory.routes');
 const marketplaceRoutes = require('./routes/marketplace.routes');
 const matchRoutes = require('./routes/match.routes');
 const certificateRoutes = require('./routes/certificate.routes');
+const notificationRoutes = require('./routes/notification.routes');
 
 const app = express();
 
@@ -27,6 +28,7 @@ app.use('/api/factories', factoryRoutes);
 app.use('/api/listings', marketplaceRoutes);
 app.use('/api/matches', matchRoutes);
 app.use('/api/certificates', certificateRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 // 404 handler
 app.use((req, res) => {

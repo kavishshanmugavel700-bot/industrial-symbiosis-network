@@ -74,6 +74,7 @@ if __name__ == "__main__":
     print(f"[INFO] AI service starting on http://0.0.0.0:{port}  (debug={debug})")
     print("[INFO] Registered routes:")
     print("         GET  /health")
+    print("         POST /compatibility/parse-msds   [NEW — MSDS PDF upload]")
     print("         POST /compatibility/score")
     print("         POST /compatibility/rank-buyers")
     print("         POST /compatibility/rank-buyers-smart")

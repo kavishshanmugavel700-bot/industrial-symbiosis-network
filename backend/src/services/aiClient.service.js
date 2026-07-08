@@ -1,4 +1,6 @@
 const axios = require('axios');
+const fs = require('fs');
+const FormData = require('form-data');
 const env = require('../config/env');
 
 const client = axios.create({ baseURL: env.aiServiceUrl, timeout: 15000 });
@@ -50,4 +52,53 @@ async function scoreCompatibility({ materialType, msdsText }) {
   return data;
 }
 
-module.exports = { predictSurplus, rankBuyers, scoreCompatibility };
+/**
+ * Parses an MSDS PDF by forwarding it to the AI service's PDF upload endpoint.
+ *
+ * CONTRACT (Role 4 — compatibility_routes.py):
+ *   POST /compatibility/parse-msds  multipart/form-data  field: "file"
+ *   -> {
+ *        material_name:       string,
+ *        chemical_properties: object,
+ *        isHazmat:            boolean,
+ *        hazard_class:        string | null,
+ *        reuse_potential:     "HIGH" | "MEDIUM" | "LOW",
+ *        raw_text:            string
+ *      }
+ *
+ * ── INTEGRATION NOTE FOR BACKEND LEAD (Role 1/2) ────────────────────────────
+ * You need to add a multer (or busboy) route in Node that accepts the PDF from
+ * the browser, writes it to a temp path, then calls parseMsds({ filePath }).
+ * Example Express route skeleton:
+ *
+ *   const multer  = require('multer');
+ *   const upload  = multer({ dest: 'uploads/' });
+ *   const { parseMsds } = require('../services/aiClient.service');
+ *
+ *   router.post('/listings/parse-msds', upload.single('file'), async (req, res) => {
+ *     try {
+ *       const result = await parseMsds({ filePath: req.file.path });
+ *       // Optionally clean up req.file.path with fs.unlink after this call
+ *       res.json(result);
+ *     } catch (err) {
+ *       res.status(500).json({ error: err.message });
+ *     }
+ *   });
+ * ─────────────────────────────────────────────────────────────────────────────
+ *
+ * @param {object} params
+ * @param {string}   params.filePath  - Absolute path to the PDF file on disk.
+ * @returns {Promise<object>} Parsed MSDS data from the AI service.
+ */
+async function parseMsds({ filePath }) {
+  const form = new FormData();
+  form.append('file', fs.createReadStream(filePath));
+  const { data } = await client.post('/compatibility/parse-msds', form, {
+    headers: form.getHeaders(),
+    timeout: 30000, // PDF parsing may take longer than default 15 s
+  });
+  return data;
+}
+
+module.exports = { predictSurplus, rankBuyers, scoreCompatibility, parseMsds };
+

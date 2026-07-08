@@ -1,4 +1,4 @@
-﻿"""
+"""
 nlp/embedding_utils.py
 -----------------------
 Provides a material-compatibility lookup table grounded in real industrial
@@ -10,62 +10,113 @@ Public API
     get_compatibility_score(waste_material, need_material) -> float
     embed_material_text(text) -> list[str]
 
+The compatibility table is loaded from:
+    data/maestri_compatibility_table.csv  (single source of truth)
+with a hardcoded fallback if the CSV cannot be found.
+
 Run directly for a demo:
     python embedding_utils.py
 """
 
+import csv
+import os
 import re
 from typing import Optional
 
 # ---------------------------------------------------------------------------
-# Compatibility lookup table
+# Compatibility lookup table — loaded from CSV at import time
 # ---------------------------------------------------------------------------
 # Built from MAESTRI project (Managing industrial Symbiosis through Enterprise
 # Transformation and Technology Innovation) findings and general industrial
-# ecology research.
+# ecology research, as documented in:
+#   data/maestri_compatibility_table.csv
 #
 # Key format:  (waste_material, need_material)
 # Score range: 0-100  (higher = more compatible / higher reuse potential)
 
-MATERIAL_COMPATIBILITY_TABLE: dict[tuple[str, str], float] = {
+# --- Hardcoded fallback (used only if the CSV cannot be found) ---------------
+_FALLBACK_COMPATIBILITY_TABLE: dict[tuple[str, str], float] = {
     # -- HIGH compatibility pairs (80-100) ----------------------------------
-    # Same-material direct reuse
     ("chemical_solvent",  "chemical_solvent"):  95.0,
     ("metal_offcut",      "metal_offcut"):       90.0,
     ("plastic_offcut",    "plastic_offcut"):     88.0,
-
-    # Cross-material symbiosis
-    ("organic_sludge",    "heat_energy"):        85.0,  # anaerobic digestion / biogas
-    ("water",             "water"):              85.0,  # direct water reuse
-    ("water",             "cooling_systems"):    85.0,  # waste heat + water -> cooling
-    ("heat_energy",       "food_drying"):        83.0,  # waste heat -> food processing
-    ("chemical_solvent",  "textile_dyeing"):     82.0,  # solvent recovery in dyeing
-    ("heat_energy",       "water"):              80.0,  # steam generation from waste heat
-    ("organic_sludge",    "fertilizer"):         78.0,  # composting / agriculture
-    ("organic_sludge",    "agriculture"):        78.0,  # biosolids land application
-    ("metal_offcut",      "construction"):       75.0,  # scrap metal -> building materials
-    ("metal_offcut",      "hardware"):           75.0,  # small metal parts reuse
-    ("plastic_offcut",    "construction"):       72.0,  # recycled plastics in construction
-    ("heat_energy",       "heat_energy"):        88.0,  # direct heat transfer
-    ("water",             "food_processing"):    80.0,  # process water reuse
-
+    ("organic_sludge",    "heat_energy"):        85.0,
+    ("water",             "water"):              85.0,
+    ("water",             "cooling_systems"):    85.0,
+    ("heat_energy",       "food_drying"):        83.0,
+    ("chemical_solvent",  "textile_dyeing"):     82.0,
+    ("heat_energy",       "water"):              80.0,
+    ("organic_sludge",    "fertilizer"):         78.0,
+    ("organic_sludge",    "agriculture"):        78.0,
+    ("metal_offcut",      "construction"):       75.0,
+    ("metal_offcut",      "hardware"):           75.0,
+    ("plastic_offcut",    "construction"):       72.0,
+    ("heat_energy",       "heat_energy"):        88.0,
+    ("water",             "food_processing"):    80.0,
     # -- MEDIUM compatibility pairs (31-79) ----------------------------------
-    ("chemical_solvent",  "plastic_offcut"):     55.0,  # solvent-assisted plastic bonding
-    ("organic_sludge",    "water"):              50.0,  # treated sludge water recovery
-    ("metal_offcut",      "heat_energy"):        45.0,  # metal melting energy recovery
-    ("plastic_offcut",    "heat_energy"):        48.0,  # waste plastic incineration (low)
-    ("water",             "textile_dyeing"):     65.0,  # recycled water in dyeing
-    ("chemical_solvent",  "heat_energy"):         5.0,  # <- kept here; also in INCOMPATIBLE
-    ("organic_sludge",    "organic_sludge"):     60.0,  # blending / co-digestion
-
+    ("chemical_solvent",  "plastic_offcut"):     55.0,
+    ("organic_sludge",    "water"):              50.0,
+    ("metal_offcut",      "heat_energy"):        45.0,
+    ("plastic_offcut",    "heat_energy"):        48.0,
+    ("water",             "textile_dyeing"):     65.0,
+    ("chemical_solvent",  "heat_energy"):         5.0,
+    ("organic_sludge",    "organic_sludge"):     60.0,
     # -- INCOMPATIBLE pairs (0-30) --------------------------------------------
-    ("chemical_solvent",  "organic_sludge"):     15.0,  # contamination / reaction risk
-    ("metal_offcut",      "water"):              10.0,  # corrosion / contamination
-    ("heat_energy",       "chemical_solvent"):    5.0,  # fire / explosion risk
-    ("organic_sludge",    "metal_offcut"):       20.0,  # biological contamination of metal
-    ("plastic_offcut",    "water"):              25.0,  # leaching risk
-    ("chemical_solvent",  "food_processing"):     8.0,  # food-safety / contamination
+    ("chemical_solvent",  "organic_sludge"):     15.0,
+    ("metal_offcut",      "water"):              10.0,
+    ("heat_energy",       "chemical_solvent"):    5.0,
+    ("organic_sludge",    "metal_offcut"):       20.0,
+    ("plastic_offcut",    "water"):              25.0,
+    ("chemical_solvent",  "food_processing"):     8.0,
 }
+
+
+def _load_compatibility_table() -> dict[tuple[str, str], float]:
+    """
+    Load the MAESTRI compatibility table from the CSV file.
+
+    Searches for the CSV at:
+        <this file's directory>/../data/maestri_compatibility_table.csv
+    (works both when run from ai-service/ and from nlp/)
+
+    Returns:
+        Dict mapping (waste_material, need_material) -> compatibility_score.
+        Falls back to the hardcoded dict if the CSV is not found or is unreadable.
+    """
+    # Resolve path relative to this source file, so it works from any cwd
+    _this_dir = os.path.dirname(os.path.abspath(__file__))
+    csv_path = os.path.join(_this_dir, "..", "data", "maestri_compatibility_table.csv")
+    csv_path = os.path.normpath(csv_path)
+
+    if not os.path.isfile(csv_path):
+        print(f"[WARN] embedding_utils: CSV not found at {csv_path!r} — using hardcoded fallback table.")
+        return dict(_FALLBACK_COMPATIBILITY_TABLE)
+
+    table: dict[tuple[str, str], float] = {}
+    try:
+        with open(csv_path, newline="", encoding="utf-8") as fh:
+            reader = csv.DictReader(fh)
+            for row in reader:
+                waste = row["waste_material"].strip().lower()
+                need  = row["need_material"].strip().lower()
+                score_str = row["compatibility_score"].strip()
+                try:
+                    score = float(score_str)
+                except ValueError:
+                    continue  # skip malformed rows
+                # Normalise to underscore form (spaces -> underscores)
+                waste = re.sub(r"[\s\-]+", "_", waste)
+                need  = re.sub(r"[\s\-]+", "_", need)
+                table[(waste, need)] = score
+        print(f"[INFO] embedding_utils: loaded {len(table)} compatibility pairs from CSV.")
+        return table
+    except Exception as exc:
+        print(f"[WARN] embedding_utils: failed to load CSV ({exc}) — using hardcoded fallback table.")
+        return dict(_FALLBACK_COMPATIBILITY_TABLE)
+
+
+# Build the table at module import time (single source of truth: the CSV)
+MATERIAL_COMPATIBILITY_TABLE: dict[tuple[str, str], float] = _load_compatibility_table()
 
 # ---------------------------------------------------------------------------
 # Industrial keyword vocabulary for TF-IDF-style extraction

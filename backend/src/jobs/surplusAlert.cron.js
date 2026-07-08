@@ -3,6 +3,7 @@ const Listing = require('../models/Listing');
 const Factory = require('../models/Factory');
 const Match = require('../models/Match');
 const User = require('../models/User');
+const Notification = require('../models/Notification');
 const aiClient = require('../services/aiClient.service');
 const { sendSurplusAlert } = require('../services/email.service');
 const { signMatchActionToken } = require('../controllers/match.controller');
@@ -65,6 +66,26 @@ async function runSurplusAlertCheck() {
           acceptUrl: `${APP_URL}/api/matches/${match.id}/confirm?token=${actionToken}`,
           declineUrl: `${APP_URL}/api/matches/${match.id}/decline?token=${actionToken}`,
         });
+
+        // Calculate hours remaining until the predicted surplus occurs
+        let hoursRemaining = 'unknown time';
+        if (listing.predicted_surplus_date) {
+          const diffMs = new Date(listing.predicted_surplus_date) - new Date();
+          const hours = Math.round(diffMs / (1000 * 60 * 60));
+          if (hours > 0) {
+            hoursRemaining = `${hours} hours`;
+          }
+        }
+
+        // Create an in-app notification for the buyer
+        await Notification.create({
+          userId: buyerUser.id,
+          title: `Upcoming Surplus Warning: ${listing.material_type}`,
+          message: `AI Prediction: A surplus of ${Number(listing.quantity_kg).toLocaleString()} kg of ${listing.material_type} is expected from ${sellerFactory.name} in ${hoursRemaining}. Compatibility: ${Math.round(ranked.compatibilityScore * 100)}%.`,
+          type: 'surplus_alert',
+          linkUrl: 'factory-profile.html'
+        });
+
         console.log(`[cron] Alerted buyer ${buyerUser.email} for listing ${listing.id} (match ${match.id})`);
       }
     }

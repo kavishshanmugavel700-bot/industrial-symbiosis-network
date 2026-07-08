@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Factory Profile & Matches - ISIN Taiwan</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- Navigation -->
+  <header>
+    <div class="nav-container">
+      <a href="index.html" class="logo" id="nav-logo">
+        <svg viewBox="0 0 24 24">
+          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H7c0-2.76 2.24-5 5-5s5 2.24 5 5c0 1.04-.42 1.99-1.07 2.75z"/>
+        </svg>
+        <span>ISIN Taiwan</span>
+      </a>
+      <nav>
+        <ul class="nav-links">
+          <li><a href="index.html">Home</a></li>
+          <li><a href="marketplace.html">Marketplace</a></li>
+        </ul>
+      </nav>
+      <div class="nav-auth">
+        <!-- Loaded dynamically -->
+      </div>
+    </div>
+  </header>
+
+  <!-- Profile Content Section -->
+  <main>
+    <h1 class="section-title">Factory Workspace</h1>
+    <p class="section-subtitle">Manage your factory operations profile, production schedule requirements, and match agreements.</p>
+
+    <div class="grid grid-cols-3" style="align-items: start;">
+      
+      <!-- Left side columns: Profile Details & Schedule Editor -->
+      <div style="grid-column: span 1; display: flex; flex-direction: column; gap: 2rem;">
+        
+        <!-- Factory Info Card -->
+        <div class="card" style="background-color: var(--clr-surface);">
+          <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem;">
+            <div style="background-color: var(--clr-primary-glow); color: var(--clr-primary); padding: 0.8rem; border-radius: var(--radius-md);">
+              <svg style="width: 32px; height: 32px;" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg>
+            </div>
+            <div>
+              <h2 id="profile-name" style="font-size: 1.4rem; font-weight: 700; color: var(--clr-text-main);">Loading...</h2>
+              <span id="profile-sector" class="badge" style="background-color: var(--clr-border); color: var(--clr-text-main); text-transform: capitalize; margin-top: 0.3rem;">Sector</span>
+            </div>
+          </div>
+
+          <div style="display: flex; justify-content: space-between; border-top: 1px solid var(--clr-border); padding-top: 1rem; font-size: 0.95rem;">
+            <span style="color: var(--clr-text-muted);">Trust Score Rating:</span>
+            <strong id="profile-trust" style="color: var(--clr-primary-light);">0 pts</strong>
+          </div>
+          <div style="display: flex; justify-content: space-between; margin-top: 0.5rem; font-size: 0.95rem;">
+            <span style="color: var(--clr-text-muted);">Coordinates:</span>
+            <strong id="profile-coords" style="color: var(--clr-text-main);">-- , --</strong>
+          </div>
+        </div>
+
+        <!-- Schedule Editor Card -->
+        <div class="card" style="background-color: var(--clr-surface);">
+          <h3 style="font-size: 1.2rem; font-weight: 700; margin-bottom: 1rem; color: var(--clr-text-main);">Needs & Inputs</h3>
+          <p style="font-size: 0.85rem; color: var(--clr-text-muted); margin-bottom: 1.5rem;">
+            Specify material types your factory needs. The AI algorithm will automatically match your demands against nearby surpluses.
+          </p>
+
+          <form id="schedule-form">
+            <div class="form-group">
+              <label for="needsMaterialType">Required Material Type</label>
+              <input type="text" id="needsMaterialType" class="form-control" placeholder="e.g. Copper Slag, Silicon Slurry, Acid" required>
+            </div>
+            
+            <div class="form-group">
+              <label for="rawSchedule">Custom Properties (JSON)</label>
+              <textarea id="rawSchedule" class="form-control" rows="4" placeholder='{"weekly_demand_kg": 5000}' style="font-family: monospace; font-size: 0.85rem; resize: none;"></textarea>
+              <span class="form-text">Arbitrary JSON data detailing specifications or shipping restrictions.</span>
+            </div>
+
+            <button type="submit" id="save-schedule-btn" class="btn btn-primary" style="width: 100%; margin-top: 1rem;">
+              Update Demand Schedule
+            </button>
+          </form>
+        </div>
+
+      </div>
+
+      <!-- Right side columns: Matches List -->
+      <div style="grid-column: span 2;">
+        <div class="card" style="background-color: var(--clr-surface); min-height: 480px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+            <h3 style="font-size: 1.4rem; font-weight: 700; color: var(--clr-text-main);">Symbiosis Exchange Matches</h3>
+            <button id="refresh-matches-btn" class="btn btn-secondary" style="padding: 0.5rem 1rem; font-size: 0.85rem; display: inline-flex; align-items: center; gap: 0.4rem;">
+              <svg style="width: 16px; height: 16px;" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 8H18"/></svg>
+              Refresh
+            </button>
+          </div>
+
+          <!-- Matches Timeline Container -->
+          <div id="matches-timeline" style="display: flex; flex-direction: column; gap: 1.5rem;">
+            <!-- Loaded dynamically via js/factoryProfile.js -->
+            <p style="text-align: center; color: var(--clr-text-muted); padding: 4rem 0;">Loading exchange history...</p>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <!-- Footer -->
+  <footer>
+    <p>&copy; 2026 Industrial Symbiosis Intelligence Network (ISIN). All rights reserved.</p>
+  </footer>
+
+  <script src="js/api.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/notifications.js"></script>
+  <script src="js/factoryProfile.js"></script>
+</body>
+</html>
