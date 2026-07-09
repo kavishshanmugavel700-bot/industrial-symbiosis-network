@@ -22,14 +22,18 @@ async function runSurplusAlertCheck() {
 
     for (const listing of upcoming) {
       const sellerFactory = await Factory.findById(listing.factory_id);
+      if (!sellerFactory) continue;
+
+      // Query candidate buyer factories that need this material type
+      const buyerFactories = await Factory.findByNeedsMaterial(listing.material_type);
 
       let rankedBuyers = [];
       try {
         rankedBuyers = await aiClient.rankBuyers({
-          listingId: listing.id,
-          materialType: listing.material_type,
-          sellerLat: sellerFactory?.latitude,
-          sellerLon: sellerFactory?.longitude,
+          sellerMaterial: listing.material_type,
+          sellerLat: sellerFactory.latitude,
+          sellerLon: sellerFactory.longitude,
+          buyerFactories,
         });
       } catch (err) {
         console.error(`[cron] AI ranking failed for listing ${listing.id}:`, err.message);
@@ -49,10 +53,31 @@ async function runSurplusAlertCheck() {
           continue;
         }
 
+        // Call explainMatch with fallback logic
+        let aiExplanation = `Strong match between ${sellerFactory.name} and ${buyerFactory.name} based on high material compatibility and geographical proximity.`;
+        try {
+          const explanationRes = await aiClient.explainMatch({
+            sellerMaterial: listing.material_type,
+            sellerFactoryName: sellerFactory.name,
+            buyerFactoryName: buyerFactory.name,
+            buyerNeedsMaterial: buyerFactory.production_schedule?.needs_material_type || listing.material_type,
+            compatibilityScore: Math.round(ranked.compatibilityScore),
+            distanceKm: Number(Number(ranked.distanceKm || 0).toFixed(1)),
+            confidenceScore: Math.round((listing.confidence_score || 0.95) * 100),
+            predictedSurplusDate: listing.predicted_surplus_date ? new Date(listing.predicted_surplus_date).toISOString().split('T')[0] : 'soon'
+          });
+          if (explanationRes && explanationRes.explanation) {
+            aiExplanation = explanationRes.explanation;
+          }
+        } catch (err) {
+          console.warn('[cron] AI explanation generation failed, using fallback:', err.message);
+        }
+
         const match = await Match.create({
           listingId: listing.id,
           buyerFactoryId: buyerFactory.id,
-          compatibilityScore: ranked.compatibilityScore,
+          compatibilityScore: ranked.compatibilityScore / 100, // convert 0-100 score back to 0-1 float for DB compatibility_score
+          aiExplanation,
         });
 
         // Signed token lets the buyer confirm/decline straight from the email
@@ -81,7 +106,7 @@ async function runSurplusAlertCheck() {
         await Notification.create({
           userId: buyerUser.id,
           title: `Upcoming Surplus Warning: ${listing.material_type}`,
-          message: `AI Prediction: A surplus of ${Number(listing.quantity_kg).toLocaleString()} kg of ${listing.material_type} is expected from ${sellerFactory.name} in ${hoursRemaining}. Compatibility: ${Math.round(ranked.compatibilityScore * 100)}%.`,
+          message: `AI Prediction: A surplus of ${Number(listing.quantity_kg).toLocaleString()} kg of ${listing.material_type} is expected from ${sellerFactory.name} in ${hoursRemaining}. Compatibility: ${Math.round(ranked.compatibilityScore)}%.`,
           type: 'surplus_alert',
           linkUrl: 'factory-profile.html'
         });

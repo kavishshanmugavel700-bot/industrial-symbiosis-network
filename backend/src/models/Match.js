@@ -1,12 +1,12 @@
 const { query } = require('../config/db');
 
 const Match = {
-  async create({ listingId, buyerFactoryId, compatibilityScore }) {
+  async create({ listingId, buyerFactoryId, compatibilityScore, aiExplanation }) {
     const { rows } = await query(
-      `INSERT INTO matches (listing_id, buyer_factory_id, compatibility_score)
-       VALUES ($1, $2, $3)
+      `INSERT INTO matches (listing_id, buyer_factory_id, compatibility_score, ai_explanation)
+       VALUES ($1, $2, $3, $4)
        RETURNING *`,
-      [listingId, buyerFactoryId, compatibilityScore || null]
+      [listingId, buyerFactoryId, compatibilityScore || null, aiExplanation || null]
     );
     return rows[0];
   },

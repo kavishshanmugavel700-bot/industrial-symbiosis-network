@@ -100,5 +100,36 @@ async function parseMsds({ filePath }) {
   return data;
 }
 
-module.exports = { predictSurplus, rankBuyers, scoreCompatibility, parseMsds };
+/**
+ * Calls the AI service to explain why a match is strong.
+ * CONTRACT:
+ *   POST /compatibility/explain-match
+ *   Body: { sellerMaterial, sellerFactoryName, buyerFactoryName, buyerNeedsMaterial,
+ *           compatibilityScore, distanceKm, confidenceScore, predictedSurplusDate }
+ *   -> { explanation: string }
+ */
+async function explainMatch({
+  sellerMaterial,
+  sellerFactoryName,
+  buyerFactoryName,
+  buyerNeedsMaterial,
+  compatibilityScore,
+  distanceKm,
+  confidenceScore,
+  predictedSurplusDate
+}) {
+  const { data } = await client.post('/compatibility/explain-match', {
+    sellerMaterial,
+    sellerFactoryName,
+    buyerFactoryName,
+    buyerNeedsMaterial,
+    compatibilityScore,
+    distanceKm,
+    confidenceScore,
+    predictedSurplusDate
+  });
+  return data;
+}
+
+module.exports = { predictSurplus, rankBuyers, scoreCompatibility, parseMsds, explainMatch };
 

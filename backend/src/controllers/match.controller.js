@@ -3,7 +3,7 @@ const Match = require('../models/Match');
 const Listing = require('../models/Listing');
 const Factory = require('../models/Factory');
 const Certificate = require('../models/Certificate');
-const { calculateCo2Avoided } = require('../services/carbonCalculator.service');
+const { calculateCo2Avoided, haversineKm } = require('../services/carbonCalculator.service');
 const { generateCertificatePdf } = require('../services/pdfCertificate.service');
 const { sendCertificateEmail } = require('../services/email.service');
 const User = require('../models/User');
@@ -133,15 +133,45 @@ async function createMatch(req, res) {
     const listing = await Listing.findById(listingId);
     if (!listing) return res.status(404).json({ error: 'Listing not found' });
 
+    const sellerFactory = await Factory.findById(listing.factory_id);
+    if (!sellerFactory) return res.status(404).json({ error: 'Seller factory not found' });
+
     const existing = await Match.findPendingByListingAndBuyer(listingId, buyerFactory.id);
     if (existing) {
       return res.status(409).json({ error: 'A pending match already exists for this listing', match: existing });
+    }
+
+    // Call explainMatch with fallback logic
+    let aiExplanation = `Strong match between ${sellerFactory.name} and ${buyerFactory.name} based on high material compatibility and geographical proximity.`;
+    try {
+      const distanceKm = haversineKm(
+        sellerFactory.latitude,
+        sellerFactory.longitude,
+        buyerFactory.latitude,
+        buyerFactory.longitude
+      );
+      const explanationRes = await aiClient.explainMatch({
+        sellerMaterial: listing.material_type,
+        sellerFactoryName: sellerFactory.name,
+        buyerFactoryName: buyerFactory.name,
+        buyerNeedsMaterial: buyerFactory.production_schedule?.needs_material_type || listing.material_type,
+        compatibilityScore: Math.round((compatibilityScore || 0.90) * 100),
+        distanceKm: Number(distanceKm.toFixed(1)),
+        confidenceScore: Math.round((listing.confidence_score || 0.95) * 100),
+        predictedSurplusDate: listing.predicted_surplus_date ? new Date(listing.predicted_surplus_date).toISOString().split('T')[0] : 'soon'
+      });
+      if (explanationRes && explanationRes.explanation) {
+        aiExplanation = explanationRes.explanation;
+      }
+    } catch (err) {
+      console.warn('[match.createMatch] AI explanation generation failed, using fallback:', err.message);
     }
 
     const match = await Match.create({
       listingId,
       buyerFactoryId: buyerFactory.id,
       compatibilityScore,
+      aiExplanation
     });
     return res.status(201).json({ match });
   } catch (err) {
