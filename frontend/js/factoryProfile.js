@@ -195,25 +195,42 @@ document.addEventListener('DOMContentLoaded', () => {
         `;
       }
 
-      row.innerHTML = `
-        <div style="display: flex; flex-direction: column; gap: 0.3rem;">
-          <div style="display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;">
-            <span class="badge ${badgeClass}" style="text-transform: capitalize;">${match.status}</span>
-            <span style="font-size: 0.8rem; font-weight: 600; color: ${directionColor}; text-transform: uppercase; letter-spacing: 0.05em;">
-              ${directionLabel}
-            </span>
+      let explanationHtml = '';
+      if (match.ai_explanation) {
+        explanationHtml = `
+          <div style="margin-top: 1rem; padding: 0.8rem 1.2rem; background: linear-gradient(135deg, hsla(190, 90%, 40%, 0.04), hsla(142, 68%, 45%, 0.04)); border-left: 3px solid var(--clr-accent); border-radius: 4px; font-size: 0.88rem; color: var(--clr-text-main); width: 100%;">
+            <div style="font-weight: 700; color: var(--clr-accent); margin-bottom: 0.25rem; display: flex; align-items: center; gap: 0.3rem;">
+              <span>✨</span> AI Insight
+            </div>
+            <p style="line-height: 1.4; font-style: italic;">"${match.ai_explanation}"</p>
           </div>
-          
-          <h4 style="font-size: 1.15rem; font-weight: 700; margin-top: 0.2rem; color: var(--clr-text-main);">
-            ${match.material_type}
-          </h4>
+        `;
+      }
 
-          <div style="display: flex; gap: 1.5rem; font-size: 0.85rem; color: var(--clr-text-muted); margin-top: 0.2rem;">
-            <span>Quantity: <strong style="color: var(--clr-text-main);">${Number(match.quantity_kg).toLocaleString()} kg</strong></span>
-            <span>Compatibility: <strong style="color: var(--clr-success);">${Math.round(match.compatibility_score * 100)}%</strong></span>
+      row.innerHTML = `
+        <div style="display: flex; flex-direction: column; gap: 0.3rem; width: 100%;">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 1rem; width: 100%;">
+            <div style="display: flex; flex-direction: column; gap: 0.3rem;">
+              <div style="display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;">
+                <span class="badge ${badgeClass}" style="text-transform: capitalize;">${match.status}</span>
+                <span style="font-size: 0.8rem; font-weight: 600; color: ${directionColor}; text-transform: uppercase; letter-spacing: 0.05em;">
+                  ${directionLabel}
+                </span>
+              </div>
+              
+              <h4 style="font-size: 1.15rem; font-weight: 700; margin-top: 0.2rem; color: var(--clr-text-main);">
+                ${match.material_type}
+              </h4>
+
+              <div style="display: flex; gap: 1.5rem; font-size: 0.85rem; color: var(--clr-text-muted); margin-top: 0.2rem;">
+                <span>Quantity: <strong style="color: var(--clr-text-main);">${Number(match.quantity_kg).toLocaleString()} kg</strong></span>
+                <span>Compatibility: <strong style="color: var(--clr-success);">${Math.round(match.compatibility_score * 100)}%</strong></span>
+              </div>
+            </div>
+            ${actionButtons}
           </div>
+          ${explanationHtml}
         </div>
-        ${actionButtons}
       `;
 
       matchesTimeline.appendChild(row);

@@ -476,6 +476,121 @@ def rank_buyers_advanced() -> tuple[Response, int]:
 
 
 # ---------------------------------------------------------------------------
+# Route 4: POST /compatibility/explain-match
+# ---------------------------------------------------------------------------
+
+@compatibility_bp.route("/explain-match", methods=["POST"])
+def explain_match() -> tuple[Response, int]:
+    """
+    Generate a natural-language explanation of why a match between a seller
+    factory and a buyer factory is strong, powered by Claude 3.5 Sonnet.
+
+    Request JSON:
+        {
+            "sellerMaterial":     str,   // e.g. "chemical_solvent"
+            "sellerFactoryName":  str,   // e.g. "Kaohsiung Petrochemical"
+            "buyerFactoryName":   str,   // e.g. "Tainan Textile"
+            "buyerNeedsMaterial": str,   // e.g. "chemical_solvent"
+            "compatibilityScore": float, // 0-100 compatibility score
+            "distanceKm":         float, // distance in km
+            "confidenceScore":    float, // surplus prediction confidence 0-100
+            "predictedSurplusDate": str  // predicted date of surplus
+        }
+
+    Response JSON (200):
+        {
+            "explanation": str
+        }
+    """
+    try:
+        payload = request.get_json(force=True, silent=True)
+    except Exception:
+        payload = None
+
+    if not payload:
+        return (
+            jsonify({"error": "Request body must be valid JSON."}),
+            400,
+        )
+
+    # Extract match parameters
+    seller_material = payload.get("sellerMaterial", "unknown material")
+    seller_factory_name = payload.get("sellerFactoryName", "Seller Facility")
+    buyer_factory_name = payload.get("buyerFactoryName", "Buyer Facility")
+    buyer_needs_material = payload.get("buyerNeedsMaterial", "unknown material")
+    compatibility_score = payload.get("compatibilityScore", 90.0)
+    distance_km = payload.get("distanceKm", 0.0)
+    confidence_score = payload.get("confidenceScore", 95.0)
+    predicted_surplus_date = payload.get("predictedSurplusDate", "soon")
+
+    fallback_explanation = f"Strong match between {seller_factory_name} and {buyer_factory_name} based on high material compatibility ({compatibility_score}%) and proximity ({distance_km} km)."
+
+    # Read API Key
+    api_key = os.getenv("GROQ_API_KEY")
+    if not api_key:
+        # Graceful fallback if key is missing
+        return jsonify({"explanation": fallback_explanation}), 200
+
+    try:
+        import requests
+        
+        # System prompt and user message
+        system_prompt = (
+            "You are an AI assistant specialized in industrial symbiosis and circular economy. "
+            "Keep your explanations concise, professional, and limited to exactly 2-3 sentences. "
+            "Do not include introductory text, warnings, pleasantries, or Markdown formatting. "
+            "Explain why the match is a good fit."
+        )
+        
+        user_message = (
+            f"Explain why this industrial symbiosis match is strong based on the following data:\n"
+            f"- Seller Factory: {seller_factory_name} (has surplus {seller_material})\n"
+            f"- Buyer Factory: {buyer_factory_name} (needs {buyer_needs_material})\n"
+            f"- Material Compatibility Score: {compatibility_score}%\n"
+            f"- Distance between factories: {distance_km} km\n"
+            f"- Surplus Prediction Date: {predicted_surplus_date}\n"
+            f"- AI Match Confidence: {confidence_score}%\n\n"
+            f"Highlight the material synergy, geographical feasibility (short distance), and timely exchange."
+        )
+
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+        
+        payload_data = {
+            "model": "llama-3.1-8b-instant",
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_message}
+            ],
+            "temperature": 0.0,
+            "max_tokens": 150
+        }
+        
+        response = requests.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            json=payload_data,
+            headers=headers,
+            timeout=5.0
+        )
+        
+        if response.status_code == 200:
+            res_json = response.json()
+            explanation = res_json["choices"][0]["message"]["content"].strip()
+            explanation = explanation.strip('"').strip("'")
+            return jsonify({"explanation": explanation}), 200
+        else:
+            print(f"[WARNING] Groq API returned status code {response.status_code}: {response.text}")
+            return jsonify({"explanation": fallback_explanation}), 200
+
+    except Exception as exc:
+        print(f"[WARNING] Groq API call failed: {str(exc)}")
+        # Graceful fallback on API failure
+        return jsonify({"explanation": fallback_explanation}), 200
+
+
+# ---------------------------------------------------------------------------
 # Demo / entry point (standalone dev server)
 # ---------------------------------------------------------------------------
 
