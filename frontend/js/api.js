@@ -1,4 +1,4 @@
-const API_BASE_URL = 'http://localhost:4000';
+const API_BASE_URL = 'https://symbiosis-backend.onrender.com';
 
 /**
  * Centrally manages network fetch requests for the ISIN system.
