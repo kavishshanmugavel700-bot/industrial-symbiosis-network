@@ -24,6 +24,7 @@ load_dotenv()
 # ---------------------------------------------------------------------------
 from routes.compatibility_routes import compatibility_bp
 from routes.predict_routes import predict_bp
+from routes.production_routes import production_bp
 
 # ---------------------------------------------------------------------------
 # App factory
@@ -47,6 +48,9 @@ def create_app() -> Flask:
 
     # Role 3 (AI Lead): surplus prediction
     app.register_blueprint(predict_bp)
+
+    # Production schedule PDF extraction
+    app.register_blueprint(production_bp)
 
     # -- Health check --------------------------------------------------------
     @app.get("/health")
@@ -79,4 +83,5 @@ if __name__ == "__main__":
     print("         POST /compatibility/rank-buyers")
     print("         POST /compatibility/rank-buyers-smart")
     print("         POST /predict/surplus")
+    print("         POST /extract/production-schedule")
     app.run(host="0.0.0.0", port=port, debug=debug)

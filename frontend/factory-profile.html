@@ -21,6 +21,7 @@
         <ul class="nav-links">
           <li><a href="index.html">Home</a></li>
           <li><a href="marketplace.html">Marketplace</a></li>
+          <li><a href="search.html">Search Materials</a></li>
         </ul>
       </nav>
       <div class="nav-auth">
@@ -86,6 +87,32 @@
           </form>
         </div>
 
+        <!-- Production Schedule PDF Upload Card -->
+        <div class="card" id="pdf-upload-card" style="background-color: var(--clr-surface); display: none;">
+          <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem;">
+            <div style="background-color: hsla(38, 92%, 50%, 0.12); color: #d97706; padding: 0.6rem; border-radius: var(--radius-md);">
+              <svg style="width: 22px; height: 22px;" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+            </div>
+            <div>
+              <h3 style="font-size: 1.1rem; font-weight: 700; color: var(--clr-text-main);">Upload Production Schedule</h3>
+              <p style="font-size: 0.8rem; color: var(--clr-text-muted);">AI extracts your schedule &amp; adds forecast slots</p>
+            </div>
+          </div>
+
+          <div id="pdf-drop-zone" style="border: 2px dashed var(--clr-border); border-radius: var(--radius-md); padding: 2rem 1rem; text-align: center; cursor: pointer; transition: border-color 0.2s, background 0.2s;" onclick="document.getElementById('pdf-file-input').click()">
+            <svg style="width: 36px; height: 36px; margin: 0 auto 0.75rem; display: block; color: var(--clr-text-muted);" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/></svg>
+            <p style="font-size: 0.9rem; color: var(--clr-text-muted);">Click to select a PDF or drag &amp; drop</p>
+            <p id="pdf-file-name" style="font-size: 0.85rem; font-weight: 600; color: var(--clr-primary-light); margin-top: 0.5rem; display: none;"></p>
+          </div>
+          <input type="file" id="pdf-file-input" accept=".pdf" style="display: none;">
+
+          <button id="pdf-upload-btn" class="btn btn-primary" style="width: 100%; margin-top: 1rem;" disabled>
+            Upload &amp; Extract Schedule
+          </button>
+
+          <div id="pdf-upload-result" style="margin-top: 1rem; display: none;"></div>
+        </div>
+
       </div>
 
       <!-- Right side columns: Matches List -->
@@ -118,6 +145,8 @@
   <script src="js/api.js"></script>
   <script src="js/auth.js"></script>
   <script src="js/notifications.js"></script>
+  <script src="js/navbarNotifications.js"></script>
   <script src="js/factoryProfile.js"></script>
+  <script src="js/pdfUpload.js"></script>
 </body>
 </html>

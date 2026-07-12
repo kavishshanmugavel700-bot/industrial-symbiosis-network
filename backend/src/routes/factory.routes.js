@@ -1,7 +1,8 @@
-const express = require('express');
-const router = express.Router();
-const Factory = require('../models/Factory');
-const authMiddleware = require('../middleware/auth.middleware');
+const express  = require('express');
+const router   = express.Router();
+const Factory  = require('../models/Factory');
+const authMiddleware        = require('../middleware/auth.middleware');
+const productionController  = require('../controllers/production.controller');
 
 // Public: list all factories (used by map/dashboard)
 router.get('/', async (req, res) => {
@@ -37,4 +38,9 @@ router.put('/me/schedule', authMiddleware, async (req, res) => {
   }
 });
 
+// GET /api/factories/:id/schedule?material=<name>
+// Returns a factory's production schedule slots (PDF-confirmed + AI-predicted)
+router.get('/:id/schedule', authMiddleware, productionController.getFactorySchedule);
+
 module.exports = router;
+

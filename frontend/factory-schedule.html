@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Factory Production Schedule - Industrial Symbiosis Network</title>
+  <meta name="description" content="Browse confirmed and AI-forecast production slots for a factory and reserve your material intake.">
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    .slot-card {
+      border: 1px solid var(--clr-border);
+      border-radius: var(--radius-md);
+      padding: 1.25rem 1.5rem;
+      background: var(--clr-surface);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1rem;
+      transition: box-shadow 0.2s;
+    }
+    .slot-card:hover { box-shadow: 0 4px 20px rgba(0,0,0,0.18); }
+    .slot-card.purchased {
+      opacity: 0.55;
+      pointer-events: none;
+    }
+
+    /* PDF-confirmed slot — solid green left border */
+    .slot-card.source-pdf {
+      border-left: 4px solid hsl(142, 68%, 45%);
+    }
+    /* AI-predicted slot — dashed amber left border */
+    .slot-card.source-predicted {
+      border-left: 4px dashed hsl(38, 92%, 50%);
+    }
+
+    .badge-confirmed {
+      background: hsla(142, 68%, 45%, 0.12);
+      color: hsl(142, 68%, 45%);
+      border: 1px solid hsla(142, 68%, 45%, 0.4);
+    }
+    .badge-forecast {
+      background: hsla(38, 92%, 50%, 0.12);
+      color: hsl(38, 92%, 50%);
+      border: 1px dashed hsla(38, 92%, 50%, 0.5);
+    }
+    .badge-purchased {
+      background: hsla(220, 50%, 50%, 0.12);
+      color: hsl(220, 50%, 70%);
+      border: 1px solid hsla(220, 50%, 50%, 0.3);
+    }
+
+    #factory-header {
+      background: linear-gradient(135deg, hsl(220, 70%, 8%), hsl(200, 80%, 10%));
+      border-bottom: 1px solid var(--clr-border);
+      padding: 2.5rem 0 2rem;
+    }
+    .slots-list { display: flex; flex-direction: column; gap: 1rem; margin-top: 1.5rem; }
+  </style>
+</head>
+<body>
+
+  <!-- Navigation -->
+  <header>
+    <div class="nav-container">
+      <a href="index.html" class="logo" id="nav-logo">
+        <svg viewBox="0 0 24 24">
+          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H7c0-2.76 2.24-5 5-5s5 2.24 5 5c0 1.04-.42 1.99-1.07 2.75z"/>
+        </svg>
+        <span>ISIN Taiwan</span>
+      </a>
+      <nav>
+        <ul class="nav-links">
+          <li><a href="index.html">Home</a></li>
+          <li><a href="marketplace.html">Marketplace</a></li>
+          <li><a href="search.html">Search Materials</a></li>
+        </ul>
+      </nav>
+      <div class="nav-auth"><!-- Loaded dynamically --></div>
+    </div>
+  </header>
+
+  <!-- Factory Header -->
+  <div id="factory-header">
+    <div style="max-width: 900px; margin: 0 auto; padding: 0 1.5rem;">
+      <a id="back-btn" href="search.html" style="display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; color: var(--clr-text-muted); text-decoration: none; margin-bottom: 1rem;">
+        ← Back to Search
+      </a>
+      <div style="display: flex; align-items: flex-start; gap: 1.5rem; flex-wrap: wrap;">
+        <div style="background: var(--clr-primary-glow); padding: 1rem; border-radius: var(--radius-md); color: var(--clr-primary);">
+          <svg style="width: 36px; height: 36px;" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg>
+        </div>
+        <div>
+          <h1 id="factory-name" style="font-size: 1.8rem; font-weight: 800;">Loading…</h1>
+          <div style="display: flex; gap: 1rem; margin-top: 0.5rem; flex-wrap: wrap; font-size: 0.88rem; color: var(--clr-text-muted);">
+            <span id="factory-sector"></span>
+            <span id="factory-trust"></span>
+          </div>
+          <p id="material-label" style="margin-top: 0.75rem; font-size: 0.95rem; color: var(--clr-text-muted);"></p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Slots -->
+  <main style="max-width: 900px; margin: 0 auto; padding: 2rem 1.5rem;">
+
+    <!-- Legend -->
+    <div style="display: flex; gap: 1.5rem; flex-wrap: wrap; margin-bottom: 1.5rem; font-size: 0.85rem;">
+      <div style="display: flex; align-items: center; gap: 0.5rem;">
+        <div style="width: 4px; height: 24px; background: hsl(142, 68%, 45%); border-radius: 2px;"></div>
+        <span style="color: var(--clr-text-muted);">Confirmed (from PDF)</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 0.5rem;">
+        <div style="width: 4px; height: 24px; border: 2px dashed hsl(38, 92%, 50%); border-radius: 2px;"></div>
+        <span style="color: var(--clr-text-muted);">AI Forecast (predicted)</span>
+      </div>
+    </div>
+
+    <div id="slots-list" class="slots-list">
+      <p style="text-align: center; color: var(--clr-text-muted); padding: 3rem 0;">Loading slots…</p>
+    </div>
+  </main>
+
+  <!-- Footer -->
+  <footer>
+    <p>&copy; 2026 Industrial Symbiosis Intelligence Network (ISIN). All rights reserved.</p>
+  </footer>
+
+  <!-- Purchase Confirmation Modal -->
+  <div id="purchase-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:1000; display:flex; align-items:center; justify-content:center;">
+    <div style="background: var(--clr-surface); border-radius: var(--radius-lg); padding: 2rem; max-width: 440px; width: 90%; border: 1px solid var(--clr-border);">
+      <h3 style="font-size: 1.3rem; font-weight: 700; margin-bottom: 1rem;">Confirm Reservation</h3>
+      <div id="modal-details" style="font-size: 0.9rem; color: var(--clr-text-muted); margin-bottom: 1.5rem; line-height: 1.8;"></div>
+      <div style="display: flex; gap: 1rem;">
+        <button id="modal-cancel-btn" class="btn btn-secondary" style="flex: 1;">Cancel</button>
+        <button id="modal-confirm-btn" class="btn btn-primary" style="flex: 1;">Reserve &amp; Download Receipt</button>
+      </div>
+    </div>
+  </div>
+  <style>
+    #purchase-modal { display: none; }
+    #purchase-modal.open { display: flex; }
+  </style>
+
+  <script src="js/api.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/notifications.js"></script>
+  <script src="js/navbarNotifications.js"></script>
+  <script src="js/factorySchedule.js"></script>
+</body>
+</html>

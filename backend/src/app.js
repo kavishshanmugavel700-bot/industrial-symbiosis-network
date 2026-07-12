@@ -5,6 +5,7 @@ const rateLimit = require('express-rate-limit');
 
 const authRoutes = require('./routes/auth.routes');
 const factoryRoutes = require('./routes/factory.routes');
+const productionRoutes = require('./routes/production.routes');
 const marketplaceRoutes = require('./routes/marketplace.routes');
 const matchRoutes = require('./routes/match.routes');
 const certificateRoutes = require('./routes/certificate.routes');
@@ -25,6 +26,9 @@ app.get('/health', (req, res) => res.json({ status: 'ok', service: 'industrial-s
 
 app.use('/api/auth', authRoutes);
 app.use('/api/factories', factoryRoutes);
+// Production routes must be mounted BEFORE marketplace so /search & /purchase
+// are not consumed by marketplace's /:id wildcard.
+app.use('/api/listings', productionRoutes);
 app.use('/api/listings', marketplaceRoutes);
 app.use('/api/matches', matchRoutes);
 app.use('/api/certificates', certificateRoutes);

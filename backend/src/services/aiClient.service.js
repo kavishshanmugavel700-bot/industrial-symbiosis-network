@@ -131,5 +131,31 @@ async function explainMatch({
   return data;
 }
 
-module.exports = { predictSurplus, rankBuyers, scoreCompatibility, parseMsds, explainMatch };
+/**
+ * Sends a production-schedule PDF to the AI service for structured extraction.
+ * CONTRACT:
+ *   POST /extract/production-schedule  multipart/form-data  fields: file, factoryId
+ *   -> {
+ *        factoryId:     int | null,
+ *        extractedRows: [{ material_type, quantity_kg, production_date }],
+ *        rowCount:      int
+ *      }
+ *
+ * @param {object} params
+ * @param {string}   params.filePath   - Absolute path to the PDF on disk.
+ * @param {number}   params.factoryId  - Factory ID to echo back in the response.
+ * @returns {Promise<object>} Parsed schedule data from the AI service.
+ */
+async function extractProductionSchedule({ filePath, factoryId }) {
+  const form = new FormData();
+  form.append('file', fs.createReadStream(filePath));
+  if (factoryId != null) form.append('factoryId', String(factoryId));
+  const { data } = await client.post('/extract/production-schedule', form, {
+    headers: form.getHeaders(),
+    timeout: 60000, // PDF parsing + LLM may take a while
+  });
+  return data;
+}
+
+module.exports = { predictSurplus, rankBuyers, scoreCompatibility, parseMsds, explainMatch, extractProductionSchedule };
 

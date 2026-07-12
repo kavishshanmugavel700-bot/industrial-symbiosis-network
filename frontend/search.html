@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Search Production Schedules - Industrial Symbiosis Network</title>
+  <meta name="description" content="Search factories by material type and browse their confirmed and AI-forecast production slots on the Industrial Symbiosis Network.">
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    /* Search-specific styles */
+    .search-hero {
+      background: linear-gradient(135deg, hsl(220, 70%, 8%), hsl(200, 80%, 10%));
+      border-bottom: 1px solid var(--clr-border);
+      padding: 3rem 0 2rem;
+      text-align: center;
+    }
+    .search-bar-wrapper {
+      max-width: 640px;
+      margin: 1.5rem auto 0;
+      display: flex;
+      gap: 0.75rem;
+      padding: 0 1rem;
+    }
+    .search-bar-wrapper input {
+      flex: 1;
+      font-size: 1rem;
+    }
+    .factory-search-card {
+      background: var(--clr-surface);
+      border: 1px solid var(--clr-border);
+      border-radius: var(--radius-lg);
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      cursor: pointer;
+    }
+    .factory-search-card:hover {
+      border-color: var(--clr-primary);
+      box-shadow: 0 0 0 3px var(--clr-primary-glow);
+    }
+    .compat-score-ring {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      border: 3px solid;
+      font-size: 0.85rem;
+      font-weight: 800;
+      flex-shrink: 0;
+    }
+    .score-high  { border-color: hsl(142, 68%, 45%); color: hsl(142, 68%, 45%); }
+    .score-mid   { border-color: hsl(38, 92%, 50%);  color: hsl(38, 92%, 50%);  }
+    .score-low   { border-color: hsl(0, 70%, 60%);   color: hsl(0, 70%, 60%);   }
+    .material-chips { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+    .material-chip {
+      font-size: 0.78rem; padding: 0.25rem 0.65rem;
+      background: var(--clr-primary-glow); color: var(--clr-primary-light);
+      border-radius: 999px; cursor: pointer; transition: background 0.2s;
+    }
+    .material-chip:hover { background: hsla(200, 100%, 60%, 0.18); }
+    #results-grid { margin-top: 2rem; }
+  </style>
+</head>
+<body>
+
+  <!-- Navigation -->
+  <header>
+    <div class="nav-container">
+      <a href="index.html" class="logo" id="nav-logo">
+        <svg viewBox="0 0 24 24">
+          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H7c0-2.76 2.24-5 5-5s5 2.24 5 5c0 1.04-.42 1.99-1.07 2.75z"/>
+        </svg>
+        <span>ISIN Taiwan</span>
+      </a>
+      <nav>
+        <ul class="nav-links">
+          <li><a href="index.html">Home</a></li>
+          <li><a href="marketplace.html">Marketplace</a></li>
+          <li><a href="search.html" style="color: var(--clr-primary-light);">Search Materials</a></li>
+        </ul>
+      </nav>
+      <div class="nav-auth"><!-- Loaded dynamically --></div>
+    </div>
+  </header>
+
+  <!-- Search Hero -->
+  <div class="search-hero">
+    <h1 style="font-size: 2rem; font-weight: 800; margin-bottom: 0.5rem;">Find Production Capacity</h1>
+    <p style="color: var(--clr-text-muted); font-size: 1rem;">Search for factories with confirmed or AI-forecast production slots for your needed materials.</p>
+
+    <div class="search-bar-wrapper">
+      <input type="text" id="material-search-input" class="form-control"
+        placeholder="e.g. metal_offcut, chemical_solvent, plastic_offcut …"
+        style="background: var(--clr-surface);">
+      <button id="search-btn" class="btn btn-primary" style="white-space: nowrap; padding: 0 1.5rem;">
+        Search
+      </button>
+    </div>
+
+    <!-- Quick-pick material chips -->
+    <div class="material-chips" style="justify-content: center; margin-top: 1rem;">
+      <span class="material-chip" data-material="metal_offcut">Metal Offcut</span>
+      <span class="material-chip" data-material="chemical_solvent">Chemical Solvent</span>
+      <span class="material-chip" data-material="plastic_offcut">Plastic Offcut</span>
+      <span class="material-chip" data-material="organic_sludge">Organic Sludge</span>
+      <span class="material-chip" data-material="heat_energy">Heat Energy</span>
+      <span class="material-chip" data-material="water">Water</span>
+      <span class="material-chip" data-material="paper_sludge">Paper Sludge</span>
+      <span class="material-chip" data-material="textile_dyeing_waste">Textile Waste</span>
+    </div>
+  </div>
+
+  <!-- Results -->
+  <main>
+    <div id="results-grid" class="grid grid-cols-3">
+      <!-- Populated by search.js -->
+      <div style="grid-column: 1 / -1; text-align: center; padding: 5rem 0; color: var(--clr-text-muted);">
+        <svg style="width: 48px; height: 48px; margin: 0 auto 1rem; display: block; opacity: 0.4;" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 15.803 7.5 7.5 0 0016.803 15.803z"/>
+        </svg>
+        <p style="font-size: 1rem; font-weight: 600;">Enter a material name above to search.</p>
+      </div>
+    </div>
+  </main>
+
+  <!-- Footer -->
+  <footer>
+    <p>&copy; 2026 Industrial Symbiosis Intelligence Network (ISIN). All rights reserved.</p>
+  </footer>
+
+  <script src="js/api.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/notifications.js"></script>
+  <script src="js/navbarNotifications.js"></script>
+  <script src="js/search.js"></script>
+</body>
+</html>
