@@ -99,7 +99,7 @@ const auth = {
         // Keep Home and Marketplace, rewrite the rest dynamically
         navLinks.innerHTML = `
           <li><a href="index.html">Home</a></li>
-          <li><a href="marketplace.html">Marketplace</a></li>
+          <li><a href="search.html">Search Materials</a></li>
           ${profileLink}
           ${user.role === 'admin' ? dashboardLink : ''}
         `;
