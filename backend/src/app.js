@@ -22,7 +22,15 @@ app.use(express.json());
 const apiLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 300, standardHeaders: true, legacyHeaders: false });
 app.use('/api', apiLimiter);
 
-app.get('/health', (req, res) => res.json({ status: 'ok', service: 'industrial-symbiosis-backend' }));
+app.get('/health', (req, res) => {
+  const env = require('./config/env');
+  res.json({
+    status: 'ok',
+    service: 'industrial-symbiosis-backend',
+    aiServiceUrl: env.aiServiceUrl,
+    nodeEnv: env.nodeEnv
+  });
+});
 
 app.use('/api/auth', authRoutes);
 app.use('/api/factories', factoryRoutes);
