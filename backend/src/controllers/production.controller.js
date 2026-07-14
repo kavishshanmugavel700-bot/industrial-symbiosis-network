@@ -245,15 +245,71 @@ async function requestSlotReservation(req, res) {
       return res.status(400).json({ error: 'You cannot request your own production slot.' });
     }
 
+    const sellerFactory = await Factory.findById(entry.factory_id);
+    if (!sellerFactory) {
+      return res.status(404).json({ error: 'Seller factory not found.' });
+    }
+
     // Prevent duplicate requests
     const existing = await ProductionScheduleReservation.findDuplicate(entry.id, buyerFactory.id);
     if (existing) {
       return res.status(409).json({ error: 'You have already submitted a reservation request for this slot.' });
     }
 
+    // -- Call AI service to generate a match explanation block --
+    let aiExplanation = '';
+    let compatibilityScore = 80; // default/fallback
+    let distanceKm = 100;        // default/fallback
+
+    if (sellerFactory.latitude && sellerFactory.longitude && buyerFactory.latitude && buyerFactory.longitude) {
+      try {
+        // Get precise compatibility scores and distance
+        const ranked = await aiClient.rankBuyers({
+          sellerMaterial: entry.material_type,
+          sellerLat:      sellerFactory.latitude,
+          sellerLon:      sellerFactory.longitude,
+          buyerFactories: [{
+            factory_id:          buyerFactory.id,
+            needs_material_type: buyerFactory.needs_material_type || entry.material_type,
+            latitude:            buyerFactory.latitude,
+            longitude:           buyerFactory.longitude,
+            trust_score:         buyerFactory.trust_score || 50,
+          }],
+        });
+
+        if (ranked && ranked.length > 0) {
+          compatibilityScore = Math.round(ranked[0].compatibilityScore || 80);
+          distanceKm         = Number((ranked[0].distanceKm || 100).toFixed(1));
+        }
+
+        // Get live LLM explanation
+        const aiExplainResult = await aiClient.explainMatch({
+          sellerMaterial:      entry.material_type,
+          sellerFactoryName:   sellerFactory.name,
+          buyerFactoryName:    buyerFactory.name,
+          buyerNeedsMaterial:  buyerFactory.needs_material_type || entry.material_type,
+          compatibilityScore:  compatibilityScore,
+          distanceKm:          distanceKm,
+          confidenceScore:     0.95,
+          predictedSurplusDate: entry.production_date,
+        });
+
+        aiExplanation = aiExplainResult.explanation || '';
+      } catch (aiErr) {
+        console.warn('[production.requestSlotReservation] AI explanation failed (non-fatal):', aiErr.message);
+      }
+    }
+
+    // Fallback explanation if AI service is offline or errors
+    if (!aiExplanation) {
+      const materialName = entry.material_type.replace(/_/g, ' ');
+      aiExplanation = `This industrial symbiosis match is strong due to the material compatibility score of ${compatibilityScore}%, indicating a high likelihood of successful ${materialName} transfer between ${sellerFactory.name} and ${buyerFactory.name}. The geographical feasibility is also favorable, with a relatively short distance of ${distanceKm} km between the factories, facilitating efficient transportation.`;
+    }
+
     const reservation = await ProductionScheduleReservation.create({
       entryId: entry.id,
       buyerFactoryId: buyerFactory.id,
+      aiExplanation,
     });
 
     return res.status(201).json({
@@ -313,6 +369,7 @@ async function getIncomingRequests(req, res) {
       scoredRequests.push({
         reservationId:      r.reservation_id,
         reservationStatus:  r.reservation_status,
+        aiExplanation:      r.ai_explanation,
         createdAt:          r.created_at,
         slotId:             r.slot_id,
         materialType:       r.material_type,

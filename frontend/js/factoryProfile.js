@@ -410,32 +410,45 @@ document.addEventListener('DOMContentLoaded', () => {
       row.style.padding = '1.25rem 1.5rem';
       row.style.backgroundColor = 'var(--clr-bg)';
       row.style.display = 'flex';
-      row.style.justifyContent = 'space-between';
-      row.style.alignItems = 'center';
-      row.style.flexWrap = 'wrap';
-      row.style.gap = '1rem';
+      row.style.flexDirection = 'column';
+      row.style.gap = '0.3rem';
+
+      let explanationHtml = '';
+      if (r.aiExplanation) {
+        explanationHtml = `
+          <div style="margin-top: 1rem; padding: 0.8rem 1.2rem; background: linear-gradient(135deg, hsla(190, 90%, 40%, 0.04), hsla(142, 68%, 45%, 0.04)); border-left: 3px solid var(--clr-accent); border-radius: 4px; font-size: 0.88rem; color: var(--clr-text-main); width: 100%;">
+            <div style="font-weight: 700; color: var(--clr-accent); margin-bottom: 0.25rem; display: flex; align-items: center; gap: 0.3rem;">
+              <span>✨</span> AI Insight
+            </div>
+            <p style="line-height: 1.4; font-style: italic;">"${r.aiExplanation}"</p>
+          </div>
+        `;
+      }
 
       row.innerHTML = `
-        <div style="display: flex; flex-direction: column; gap: 0.3rem; flex: 1; min-width: 200px;">
-          <div style="display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;">
-            <span class="badge ${scoreClass}">AI Rating: ${r.compatibilityScore}%</span>
-            <span style="font-size: 0.8rem; color: var(--clr-text-muted); text-transform: uppercase;">Incoming Request</span>
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; width: 100%;">
+          <div style="display: flex; flex-direction: column; gap: 0.3rem; flex: 1; min-width: 200px;">
+            <div style="display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;">
+              <span class="badge ${scoreClass}">AI Rating: ${r.compatibilityScore}%</span>
+              <span style="font-size: 0.8rem; color: var(--clr-text-muted); text-transform: uppercase;">Incoming Request</span>
+            </div>
+            <h4 style="font-size: 1.15rem; font-weight: 700; color: var(--clr-text-main); margin-top: 0.2rem;">
+              ${r.buyerName} requested ${r.materialType.replace(/_/g, ' ')}
+            </h4>
+            <div style="display: flex; gap: 1.5rem; font-size: 0.85rem; color: var(--clr-text-muted); margin-top: 0.2rem; flex-wrap: wrap;">
+              <span>Quantity: <strong style="color: var(--clr-text-main);">${r.quantityKg.toLocaleString()} kg</strong></span>
+              <span>Requested Date: <strong style="color: var(--clr-text-main);">${dateStr}</strong></span>
+              ${r.distanceKm ? `<span>Distance: <strong style="color: var(--clr-text-main);">${r.distanceKm} km</strong></span>` : ''}
+            </div>
           </div>
-          <h4 style="font-size: 1.15rem; font-weight: 700; color: var(--clr-text-main); margin-top: 0.2rem;">
-            ${r.buyerName} requested ${r.materialType.replace(/_/g, ' ')}
-          </h4>
-          <div style="display: flex; gap: 1.5rem; font-size: 0.85rem; color: var(--clr-text-muted); margin-top: 0.2rem; flex-wrap: wrap;">
-            <span>Quantity: <strong style="color: var(--clr-text-main);">${r.quantityKg.toLocaleString()} kg</strong></span>
-            <span>Date: <strong style="color: var(--clr-text-main);">${dateStr}</strong></span>
-            ${r.distanceKm ? `<span>Distance: <strong style="color: var(--clr-text-main);">${r.distanceKm} km</strong></span>` : ''}
+          <div style="display: flex; align-items: center; gap: 0.75rem; flex-shrink: 0;">
+            ${isPending 
+              ? `<button class="btn btn-primary approve-req-btn" data-id="${r.reservationId}" style="padding: 0.5rem 1.2rem; font-size: 0.85rem;">Approve Match</button>`
+              : `<span class="badge ${r.reservationStatus === 'approved' ? 'badge-confirmed' : 'badge-purchased'}" style="text-transform: capitalize; padding: 0.4rem 1rem;">${r.reservationStatus}</span>`
+            }
           </div>
         </div>
-        <div style="display: flex; align-items: center; gap: 0.75rem; flex-shrink: 0;">
-          ${isPending 
-            ? `<button class="btn btn-primary approve-req-btn" data-id="${r.reservationId}" style="padding: 0.5rem 1.2rem; font-size: 0.85rem;">Approve Match</button>`
-            : `<span class="badge ${r.reservationStatus === 'approved' ? 'badge-confirmed' : 'badge-purchased'}" style="text-transform: capitalize; padding: 0.4rem 1rem;">${r.reservationStatus}</span>`
-          }
-        </div>
+        ${explanationHtml}
       `;
 
       incomingContainer.appendChild(row);
@@ -504,7 +517,7 @@ document.addEventListener('DOMContentLoaded', () => {
           </h4>
           <div style="display: flex; gap: 1.5rem; font-size: 0.85rem; color: var(--clr-text-muted); margin-top: 0.2rem; flex-wrap: wrap;">
             <span>Quantity: <strong style="color: var(--clr-text-main);">${r.quantityKg.toLocaleString()} kg</strong></span>
-            <span>Date: <strong style="color: var(--clr-text-main);">${dateStr}</strong></span>
+            <span>Requested Date: <strong style="color: var(--clr-text-main);">${dateStr}</strong></span>
           </div>
         </div>
         <div style="flex-shrink: 0;">

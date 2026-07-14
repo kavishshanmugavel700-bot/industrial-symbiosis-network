@@ -4,12 +4,12 @@ const ProductionScheduleReservation = {
   /**
    * Create a new pending reservation request.
    */
-  async create({ entryId, buyerFactoryId }) {
+  async create({ entryId, buyerFactoryId, aiExplanation }) {
     const { rows } = await query(
-      `INSERT INTO production_schedule_reservations (entry_id, buyer_factory_id, status)
-       VALUES ($1, $2, 'pending')
+      `INSERT INTO production_schedule_reservations (entry_id, buyer_factory_id, ai_explanation, status)
+       VALUES ($1, $2, $3, 'pending')
        RETURNING *`,
-      [entryId, buyerFactoryId]
+      [entryId, buyerFactoryId, aiExplanation]
     );
     return rows[0];
   },
@@ -56,6 +56,7 @@ const ProductionScheduleReservation = {
     const { rows } = await query(
       `SELECT r.id AS reservation_id,
               r.status AS reservation_status,
+              r.ai_explanation,
               r.created_at,
               e.id AS slot_id,
               e.material_type,
