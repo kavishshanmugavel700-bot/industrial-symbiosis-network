@@ -114,23 +114,44 @@
 
       </div>
 
-      <!-- Right side columns: Matches List -->
-      <div style="grid-column: span 2;">
-        <div class="card" style="background-color: var(--clr-surface); min-height: 480px;">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
-            <h3 style="font-size: 1.4rem; font-weight: 700; color: var(--clr-text-main);">Symbiosis Exchange Matches</h3>
-            <button id="refresh-matches-btn" class="btn btn-secondary" style="padding: 0.5rem 1rem; font-size: 0.85rem; display: inline-flex; align-items: center; gap: 0.4rem;">
-              <svg style="width: 16px; height: 16px;" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 8H18"/></svg>
+      <!-- Right side columns: Matches List & Reservations -->
+      <div style="grid-column: span 2; display: flex; flex-direction: column; gap: 2rem;">
+        
+        <!-- Symbiosis Exchange Matches -->
+        <div class="card" style="background-color: var(--clr-surface);">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+            <h3 style="font-size: 1.3rem; font-weight: 700; color: var(--clr-text-main);">Symbiosis Exchange Matches</h3>
+            <button id="refresh-matches-btn" class="btn btn-secondary" style="padding: 0.4rem 0.8rem; font-size: 0.8rem; display: inline-flex; align-items: center; gap: 0.4rem;">
+              <svg style="width: 14px; height: 14px;" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 8H18"/></svg>
               Refresh
             </button>
           </div>
 
           <!-- Matches Timeline Container -->
-          <div id="matches-timeline" style="display: flex; flex-direction: column; gap: 1.5rem;">
-            <!-- Loaded dynamically via js/factoryProfile.js -->
-            <p style="text-align: center; color: var(--clr-text-muted); padding: 4rem 0;">Loading exchange history...</p>
+          <div id="matches-timeline" style="display: flex; flex-direction: column; gap: 1rem;">
+            <p style="text-align: center; color: var(--clr-text-muted); padding: 2rem 0;">Loading exchange history...</p>
           </div>
         </div>
+
+        <!-- Incoming Capacity Requests (Seller Approval View) -->
+        <div class="card" style="background-color: var(--clr-surface);">
+          <h3 style="font-size: 1.3rem; font-weight: 700; color: var(--clr-text-main); margin-bottom: 0.5rem;">Incoming Slot Requests</h3>
+          <p style="font-size: 0.85rem; color: var(--clr-text-muted); margin-bottom: 1.5rem;">
+            Review bookings requested by buyers. The system automatically calculates AI compatibility matching scores to recommend the best candidates.
+          </p>
+          <div id="incoming-requests-container" style="display: flex; flex-direction: column; gap: 1rem;">
+            <p style="text-align: center; color: var(--clr-text-muted); padding: 2rem 0;">Loading requests...</p>
+          </div>
+        </div>
+
+        <!-- My Outgoing Reservations (Buyer Requests View) -->
+        <div class="card" style="background-color: var(--clr-surface);">
+          <h3 style="font-size: 1.3rem; font-weight: 700; color: var(--clr-text-main); margin-bottom: 1.5rem;">My Outgoing Reservations</h3>
+          <div id="outgoing-reservations-container" style="display: flex; flex-direction: column; gap: 1rem;">
+            <p style="text-align: center; color: var(--clr-text-muted); padding: 2rem 0;">Loading reservations...</p>
+          </div>
+        </div>
+
       </div>
 
     </div>
@@ -145,7 +166,7 @@
   <script src="js/auth.js"></script>
   <script src="js/notifications.js"></script>
   <script src="js/navbarNotifications.js"></script>
-  <script src="js/factoryProfile.js"></script>
+  <script src="js/factoryProfile.js?v=2"></script>
   <script src="js/pdfUpload.js"></script>
 </body>
 </html>

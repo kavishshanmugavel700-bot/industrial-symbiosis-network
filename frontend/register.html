@@ -55,8 +55,7 @@
         <div class="form-group">
           <label for="role">Role Type</label>
           <select id="role" class="form-control">
-            <option value="factory" selected>Factory Owner (Waste Supplier)</option>
-            <option value="buyer">Buyer (Material Consumer)</option>
+            <option value="factory" selected>Industrial Factory</option>
             <option value="admin">Government Administrator</option>
           </select>
         </div>
@@ -169,7 +168,7 @@
             if (res.user.role === 'admin') {
               window.location.href = 'gov-dashboard.html';
             } else {
-              window.location.href = 'marketplace.html';
+              window.location.href = 'search.html';
             }
           }, 1000);
 

@@ -353,4 +353,206 @@ document.addEventListener('DOMContentLoaded', () => {
       button.innerHTML = originalContent;
     }
   }
+
+  // --- Capacity Slot Booking Reservations ---
+
+  const incomingContainer = document.getElementById('incoming-requests-container');
+  const outgoingContainer = document.getElementById('outgoing-reservations-container');
+
+  // Trigger loads
+  loadReservations();
+
+  async function loadReservations() {
+    loadIncomingRequests();
+    loadOutgoingReservations();
+  }
+
+  async function loadIncomingRequests() {
+    if (!incomingContainer) return;
+    incomingContainer.innerHTML = '<p style="text-align: center; color: var(--clr-text-muted); padding: 1.5rem 0;">Loading incoming requests...</p>';
+    try {
+      const res = await apiFetch('/api/listings/reservations/incoming');
+      renderIncomingRequests(res.requests || []);
+    } catch (err) {
+      incomingContainer.innerHTML = `<p style="text-align: center; color: var(--clr-error); padding: 1.5rem 0;">Error: ${err.message}</p>`;
+    }
+  }
+
+  async function loadOutgoingReservations() {
+    if (!outgoingContainer) return;
+    outgoingContainer.innerHTML = '<p style="text-align: center; color: var(--clr-text-muted); padding: 1.5rem 0;">Loading reservations...</p>';
+    try {
+      const res = await apiFetch('/api/listings/reservations/outgoing');
+      renderOutgoingReservations(res.reservations || []);
+    } catch (err) {
+      outgoingContainer.innerHTML = `<p style="text-align: center; color: var(--clr-error); padding: 1.5rem 0;">Error: ${err.message}</p>`;
+    }
+  }
+
+  function renderIncomingRequests(requests) {
+    if (requests.length === 0) {
+      incomingContainer.innerHTML = `
+        <div style="text-align: center; color: var(--clr-text-muted); padding: 2rem 1rem; border: 1px dashed var(--clr-border); border-radius: var(--radius-md);">
+          No incoming booking requests received yet.
+        </div>`;
+      return;
+    }
+
+    incomingContainer.innerHTML = '';
+    requests.forEach(r => {
+      const dateStr = new Date(r.productionDate).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+      const scoreClass = r.compatibilityScore >= 70 ? 'badge-confirmed' : r.compatibilityScore >= 40 ? 'badge-forecast' : 'badge-purchased';
+      const isPending = r.reservationStatus === 'pending';
+
+      const row = document.createElement('div');
+      row.style.border = '1px solid var(--clr-border)';
+      row.style.borderRadius = 'var(--radius-md)';
+      row.style.padding = '1.25rem 1.5rem';
+      row.style.backgroundColor = 'var(--clr-bg)';
+      row.style.display = 'flex';
+      row.style.justifyContent = 'space-between';
+      row.style.alignItems = 'center';
+      row.style.flexWrap = 'wrap';
+      row.style.gap = '1rem';
+
+      row.innerHTML = `
+        <div style="display: flex; flex-direction: column; gap: 0.3rem; flex: 1; min-width: 200px;">
+          <div style="display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;">
+            <span class="badge ${scoreClass}">AI Rating: ${r.compatibilityScore}%</span>
+            <span style="font-size: 0.8rem; color: var(--clr-text-muted); text-transform: uppercase;">Incoming Request</span>
+          </div>
+          <h4 style="font-size: 1.15rem; font-weight: 700; color: var(--clr-text-main); margin-top: 0.2rem;">
+            ${r.buyerName} requested ${r.materialType.replace(/_/g, ' ')}
+          </h4>
+          <div style="display: flex; gap: 1.5rem; font-size: 0.85rem; color: var(--clr-text-muted); margin-top: 0.2rem; flex-wrap: wrap;">
+            <span>Quantity: <strong style="color: var(--clr-text-main);">${r.quantityKg.toLocaleString()} kg</strong></span>
+            <span>Date: <strong style="color: var(--clr-text-main);">${dateStr}</strong></span>
+            ${r.distanceKm ? `<span>Distance: <strong style="color: var(--clr-text-main);">${r.distanceKm} km</strong></span>` : ''}
+          </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 0.75rem; flex-shrink: 0;">
+          ${isPending 
+            ? `<button class="btn btn-primary approve-req-btn" data-id="${r.reservationId}" style="padding: 0.5rem 1.2rem; font-size: 0.85rem;">Approve Match</button>`
+            : `<span class="badge ${r.reservationStatus === 'approved' ? 'badge-confirmed' : 'badge-purchased'}" style="text-transform: capitalize; padding: 0.4rem 1rem;">${r.reservationStatus}</span>`
+          }
+        </div>
+      `;
+
+      incomingContainer.appendChild(row);
+    });
+
+    // Wire up approval buttons
+    incomingContainer.querySelectorAll('.approve-req-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const id = btn.getAttribute('data-id');
+        btn.disabled = true;
+        btn.textContent = 'Approving...';
+        try {
+          await apiFetch(`/api/listings/reservations/${id}/approve`, { method: 'POST' });
+          notifications.showSuccess('Reservation approved! Buyer notified.');
+          loadReservations();
+          loadMatches();
+        } catch (err) {
+          notifications.showError(err.message || 'Failed to approve request.');
+          btn.disabled = false;
+          btn.textContent = 'Approve Match';
+        }
+      });
+    });
+  }
+
+  function renderOutgoingReservations(reservations) {
+    if (reservations.length === 0) {
+      outgoingContainer.innerHTML = `
+        <div style="text-align: center; color: var(--clr-text-muted); padding: 2rem 1rem; border: 1px dashed var(--clr-border); border-radius: var(--radius-md);">
+          No outgoing reservation requests submitted yet.
+        </div>`;
+      return;
+    }
+
+    outgoingContainer.innerHTML = '';
+    reservations.forEach(r => {
+      const dateStr = new Date(r.productionDate).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+      const statusClass = r.reservationStatus === 'approved' ? 'badge-confirmed' : r.reservationStatus === 'pending' ? 'badge-forecast' : 'badge-purchased';
+
+      const row = document.createElement('div');
+      row.style.border = '1px solid var(--clr-border)';
+      row.style.borderRadius = 'var(--radius-md)';
+      row.style.padding = '1.25rem 1.5rem';
+      row.style.backgroundColor = 'var(--clr-bg)';
+      row.style.display = 'flex';
+      row.style.justifyContent = 'space-between';
+      row.style.alignItems = 'center';
+      row.style.flexWrap = 'wrap';
+      row.style.gap = '1rem';
+
+      const actionHtml = r.reservationStatus === 'approved'
+        ? `<button class="btn btn-outline download-receipt-btn" data-id="${r.reservationId}" style="padding: 0.5rem 1rem; font-size: 0.85rem; display: flex; align-items: center; gap: 0.3rem;">
+             <svg style="width: 14px; height: 14px;" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+             Receipt PDF
+           </button>`
+        : `<span class="badge ${statusClass}" style="text-transform: capitalize; padding: 0.4rem 1rem;">${r.reservationStatus}</span>`;
+
+      row.innerHTML = `
+        <div style="display: flex; flex-direction: column; gap: 0.3rem; flex: 1; min-width: 200px;">
+          <div style="display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;">
+            <span class="badge ${statusClass}" style="text-transform: capitalize;">${r.reservationStatus}</span>
+            <span style="font-size: 0.8rem; color: var(--clr-text-muted); text-transform: uppercase;">Outgoing Request</span>
+          </div>
+          <h4 style="font-size: 1.15rem; font-weight: 700; color: var(--clr-text-main); margin-top: 0.2rem;">
+            Slot at ${r.sellerName} (${r.materialType.replace(/_/g, ' ')})
+          </h4>
+          <div style="display: flex; gap: 1.5rem; font-size: 0.85rem; color: var(--clr-text-muted); margin-top: 0.2rem; flex-wrap: wrap;">
+            <span>Quantity: <strong style="color: var(--clr-text-main);">${r.quantityKg.toLocaleString()} kg</strong></span>
+            <span>Date: <strong style="color: var(--clr-text-main);">${dateStr}</strong></span>
+          </div>
+        </div>
+        <div style="flex-shrink: 0;">
+          ${actionHtml}
+        </div>
+      `;
+
+      outgoingContainer.appendChild(row);
+    });
+
+    // Wire up receipt downloads
+    outgoingContainer.querySelectorAll('.download-receipt-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const id = btn.getAttribute('data-id');
+        const originalContent = btn.innerHTML;
+        btn.disabled = true;
+        btn.textContent = 'Downloading...';
+        try {
+          const token = auth.getToken();
+          const response = await fetch(`${API_BASE_URL}/api/listings/reservations/${id}/receipt`, {
+            method: 'GET',
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+
+          if (!response.ok) throw new Error('Failed to download receipt');
+
+          const blob = await response.blob();
+          const url = window.URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          
+          const cd = response.headers.get('Content-Disposition') || '';
+          const fnMatch = cd.match(/filename="([^"]+)"/);
+          a.download = fnMatch ? fnMatch[1] : `slot-receipt-${id}.pdf`;
+          
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          window.URL.revokeObjectURL(url);
+          notifications.showSuccess('Receipt downloaded successfully!');
+        } catch (err) {
+          notifications.showError(err.message || 'Failed to download receipt.');
+        } finally {
+          btn.disabled = false;
+          btn.innerHTML = originalContent;
+        }
+      });
+    });
+  }
 });
+

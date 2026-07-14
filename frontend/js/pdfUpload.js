@@ -5,7 +5,7 @@
  */
 document.addEventListener('DOMContentLoaded', () => {
   const user = auth.getUser();
-  if (!user || (user.role !== 'factory' && user.role !== 'admin')) return;
+  if (!user || (user.role !== 'factory' && user.role !== 'buyer' && user.role !== 'admin')) return;
 
   // Show the card
   const card = document.getElementById('pdf-upload-card');

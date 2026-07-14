@@ -2,20 +2,14 @@ const fs = require('fs');
 const path = require('path');
 const Factory = require('../models/Factory');
 const ProductionScheduleEntry = require('../models/ProductionScheduleEntry');
+const ProductionScheduleReservation = require('../models/ProductionScheduleReservation');
 const aiClient = require('../services/aiClient.service');
 const { generatePurchaseConfirmationPdf } = require('../services/pdfCertificate.service');
+const { query } = require('../config/db'); // used to create system notifications
 
 // ---------------------------------------------------------------------------
 // POST /api/listings/upload-schedule
 // ---------------------------------------------------------------------------
-
-/**
- * Accept a PDF from a seller, extract it via the AI service, bulk-insert the
- * extracted rows, then call the existing surplus prediction to generate
- * additional AI-forecast slots beyond the PDF's date range.
- *
- * Auth: requires 'factory' role (enforced in routes file via authMiddleware + roleCheck).
- */
 async function uploadSchedule(req, res) {
   const tmpPath = req.file ? req.file.path : null;
   try {
@@ -28,7 +22,6 @@ async function uploadSchedule(req, res) {
       return res.status(400).json({ error: 'No factory profile found for this user.' });
     }
 
-    // -- Step 1: Forward PDF to AI service for extraction --------------------
     let extractedRows = [];
     try {
       const aiResult = await aiClient.extractProductionSchedule({
@@ -51,7 +44,6 @@ async function uploadSchedule(req, res) {
       });
     }
 
-    // -- Step 2: Clear old entries for this factory & bulk-insert new ones ----
     await ProductionScheduleEntry.deleteByFactory(factory.id);
 
     const pdfEntries = extractedRows.map((row) => ({
@@ -64,14 +56,11 @@ async function uploadSchedule(req, res) {
 
     await ProductionScheduleEntry.bulkInsert(pdfEntries);
 
-    // -- Step 3: Generate AI-predicted slots beyond the PDF's date range ------
-    // Find the latest date in the extracted rows.
     const dates = extractedRows
       .map((r) => new Date(r.production_date))
       .filter((d) => !isNaN(d));
     const maxPdfDate = dates.length > 0 ? new Date(Math.max(...dates)) : new Date();
 
-    // Get all unique material types from the PDF schedule
     const uniqueMaterials = [...new Set(extractedRows.map((r) => r.material_type))];
     let totalPredictedAdded = 0;
 
@@ -93,13 +82,12 @@ async function uploadSchedule(req, res) {
         || 1000;
 
       let currentDate = new Date((predictionResult && predictionResult.predictedSurplusDate) || maxPdfDate);
-      const step = 14; // 2-week cadence for forecast slots
+      const step = 14;
 
       while (currentDate <= maxPdfDate) {
         currentDate = new Date(currentDate.getTime() + step * 24 * 60 * 60 * 1000);
       }
 
-      // Insert 3 predicted slots at 2-week intervals for this material
       const predictedEntries = [];
       for (let i = 0; i < 3; i++) {
         predictedEntries.push({
@@ -124,7 +112,6 @@ async function uploadSchedule(req, res) {
     console.error('[production.uploadSchedule]', err);
     return res.status(500).json({ error: 'Failed to process production schedule upload.' });
   } finally {
-    // Always clean up the temp file
     if (tmpPath) {
       fs.unlink(tmpPath, () => {});
     }
@@ -134,13 +121,6 @@ async function uploadSchedule(req, res) {
 // ---------------------------------------------------------------------------
 // GET /api/listings/search?material=<name>
 // ---------------------------------------------------------------------------
-
-/**
- * Search for factories selling a given material type.
- * Returns each factory ranked by AI compatibility with the buyer's profile.
- *
- * Auth: requires any authenticated user.
- */
 async function searchSchedules(req, res) {
   try {
     const { material } = req.query;
@@ -149,21 +129,13 @@ async function searchSchedules(req, res) {
     }
 
     const materialQuery = material.trim();
-
-    // Get buyer's factory for scoring context
     const buyerFactory = await Factory.findByUserId(req.user.id);
-
-    // Find all factories with matching schedule entries
     const candidateFactories = await ProductionScheduleEntry.findFactoriesByMaterial(materialQuery);
 
     if (candidateFactories.length === 0) {
       return res.json({ factories: [] });
     }
 
-    // Rank via AI compatibility — we re-use rankBuyers by treating the buyer's
-    // factory as the "seller" and the candidate seller factories as "buyers".
-    // The distance and trust math is symmetric; compatibility scores will be high
-    // because all factories share the same material type (seller material == buyer needs).
     let rankedFactories = candidateFactories;
     if (buyerFactory && buyerFactory.latitude && buyerFactory.longitude) {
       try {
@@ -180,7 +152,6 @@ async function searchSchedules(req, res) {
           })),
         });
 
-        // Merge score data back onto the factory rows
         const scoreMap = new Map(ranked.map((r) => [String(r.factoryId), r]));
         rankedFactories = candidateFactories
           .map((f) => {
@@ -194,7 +165,6 @@ async function searchSchedules(req, res) {
           })
           .sort((a, b) => (b.totalScore || 0) - (a.totalScore || 0));
       } catch (aiErr) {
-        // AI ranking failed — return unranked list
         console.warn('[production.searchSchedules] AI ranking failed (non-fatal):', aiErr.message);
       }
     }
@@ -209,13 +179,6 @@ async function searchSchedules(req, res) {
 // ---------------------------------------------------------------------------
 // GET /api/factories/:id/schedule?material=<name>
 // ---------------------------------------------------------------------------
-
-/**
- * Return a single factory's full list of production schedule slots,
- * optionally filtered by material type, sorted ascending by date.
- *
- * Auth: requires any authenticated user.
- */
 async function getFactorySchedule(req, res) {
   try {
     const factoryId = parseInt(req.params.id, 10);
@@ -256,19 +219,9 @@ async function getFactorySchedule(req, res) {
 }
 
 // ---------------------------------------------------------------------------
-// POST /api/listings/purchase
+// POST /api/listings/reserve
 // ---------------------------------------------------------------------------
-
-/**
- * Purchase / reserve a production schedule slot.
- * Body: { entryId }
- *
- * Marks the entry as 'purchased', links the buyer factory, and returns a
- * downloadable PDF confirmation receipt.
- *
- * Auth: requires any authenticated user with a factory profile.
- */
-async function purchaseSlot(req, res) {
+async function requestSlotReservation(req, res) {
   try {
     const { entryId } = req.body;
     if (!entryId) {
@@ -277,47 +230,259 @@ async function purchaseSlot(req, res) {
 
     const entry = await ProductionScheduleEntry.findById(entryId);
     if (!entry) {
-      return res.status(404).json({ error: 'Schedule entry not found.' });
+      return res.status(404).json({ error: 'Production slot not found.' });
     }
     if (entry.status !== 'open') {
-      return res.status(409).json({ error: 'This slot is no longer available.' });
+      return res.status(409).json({ error: 'This production slot is no longer available.' });
     }
 
-    const buyerFactory  = await Factory.findByUserId(req.user.id);
+    const buyerFactory = await Factory.findByUserId(req.user.id);
     if (!buyerFactory) {
       return res.status(400).json({ error: 'No factory profile found for this user.' });
     }
 
     if (String(buyerFactory.id) === String(entry.factory_id)) {
-      return res.status(400).json({ error: 'You cannot purchase your own slot.' });
+      return res.status(400).json({ error: 'You cannot request your own production slot.' });
     }
 
-    const sellerFactory = await Factory.findById(entry.factory_id);
+    // Prevent duplicate requests
+    const existing = await ProductionScheduleReservation.findDuplicate(entry.id, buyerFactory.id);
+    if (existing) {
+      return res.status(409).json({ error: 'You have already submitted a reservation request for this slot.' });
+    }
+
+    const reservation = await ProductionScheduleReservation.create({
+      entryId: entry.id,
+      buyerFactoryId: buyerFactory.id,
+    });
+
+    return res.status(201).json({
+      message: 'Reservation request submitted successfully. Waiting for seller approval.',
+      reservation,
+    });
+  } catch (err) {
+    console.error('[production.requestSlotReservation]', err);
+    return res.status(500).json({ error: 'Failed to submit reservation request.' });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// GET /api/listings/reservations/incoming
+// ---------------------------------------------------------------------------
+async function getIncomingRequests(req, res) {
+  try {
+    const sellerFactory = await Factory.findByUserId(req.user.id);
     if (!sellerFactory) {
-      return res.status(404).json({ error: 'Seller factory not found.' });
+      return res.status(400).json({ error: 'No factory profile found for this user.' });
     }
 
-    // Mark as purchased
-    await ProductionScheduleEntry.markPurchased(entry.id, buyerFactory.id);
+    const rawRequests = await ProductionScheduleReservation.findIncomingBySeller(sellerFactory.id);
 
-    // Generate confirmation PDF
+    // Calculate AI compatibility for each incoming candidate
+    const scoredRequests = [];
+    for (const r of rawRequests) {
+      let compatibilityScore = null;
+      let distanceKm = null;
+      let totalScore = 0;
+
+      if (sellerFactory.latitude && sellerFactory.longitude && r.buyer_latitude && r.buyer_longitude) {
+        try {
+          const ranked = await aiClient.rankBuyers({
+            sellerMaterial: r.material_type,
+            sellerLat:      sellerFactory.latitude,
+            sellerLon:      sellerFactory.longitude,
+            buyerFactories: [{
+              factory_id:          r.buyer_factory_id,
+              needs_material_type: r.material_type,
+              latitude:            r.buyer_latitude,
+              longitude:           r.buyer_longitude,
+              trust_score:         r.buyer_trust || 50,
+            }],
+          });
+
+          if (ranked && ranked.length > 0) {
+            compatibilityScore = ranked[0].compatibilityScore || null;
+            distanceKm         = ranked[0].distanceKm         || null;
+            totalScore         = ranked[0].totalScore         || 0;
+          }
+        } catch (aiErr) {
+          console.warn('[production.getIncomingRequests] AI scoring failed (non-fatal):', aiErr.message);
+        }
+      }
+
+      scoredRequests.push({
+        reservationId:      r.reservation_id,
+        reservationStatus:  r.reservation_status,
+        createdAt:          r.created_at,
+        slotId:             r.slot_id,
+        materialType:       r.material_type,
+        quantityKg:         Number(r.quantity_kg),
+        productionDate:     r.production_date,
+        slotSource:         r.slot_source,
+        buyerFactoryId:     r.buyer_factory_id,
+        buyerName:          r.buyer_name,
+        buyerIndustry:      r.buyer_industry,
+        compatibilityScore: compatibilityScore ? Math.round(compatibilityScore) : null,
+        distanceKm:         distanceKm ? Number(distanceKm.toFixed(1)) : null,
+        totalScore:         totalScore ? Math.round(totalScore) : 0,
+      });
+    }
+
+    // Sort by AI recommendation totalScore descending
+    scoredRequests.sort((a, b) => b.totalScore - a.totalScore);
+
+    return res.json({ requests: scoredRequests });
+  } catch (err) {
+    console.error('[production.getIncomingRequests]', err);
+    return res.status(500).json({ error: 'Failed to fetch incoming reservation requests.' });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// GET /api/listings/reservations/outgoing
+// ---------------------------------------------------------------------------
+async function getOutgoingRequests(req, res) {
+  try {
+    const buyerFactory = await Factory.findByUserId(req.user.id);
+    if (!buyerFactory) {
+      return res.status(400).json({ error: 'No factory profile found for this user.' });
+    }
+
+    const reservations = await ProductionScheduleReservation.findOutgoingByBuyer(buyerFactory.id);
+    return res.json({
+      reservations: reservations.map(r => ({
+        reservationId:     r.reservation_id,
+        reservationStatus: r.reservation_status,
+        createdAt:         r.created_at,
+        slotId:            r.slot_id,
+        materialType:      r.material_type,
+        quantityKg:        Number(r.quantity_kg),
+        productionDate:    r.production_date,
+        slotSource:        r.slot_source,
+        sellerFactoryId:   r.seller_factory_id,
+        sellerName:        r.seller_name,
+      })),
+    });
+  } catch (err) {
+    console.error('[production.getOutgoingRequests]', err);
+    return res.status(500).json({ error: 'Failed to fetch outgoing reservations.' });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// POST /api/listings/reservations/:id/approve
+// ---------------------------------------------------------------------------
+async function approveReservation(req, res) {
+  try {
+    const reservationId = parseInt(req.params.id, 10);
+    if (isNaN(reservationId)) {
+      return res.status(400).json({ error: 'Invalid reservation ID.' });
+    }
+
+    const reservation = await ProductionScheduleReservation.findById(reservationId);
+    if (!reservation) {
+      return res.status(404).json({ error: 'Reservation request not found.' });
+    }
+
+    const sellerFactory = await Factory.findByUserId(req.user.id);
+    if (!sellerFactory || String(sellerFactory.id) !== String(reservation.seller_factory_id)) {
+      return res.status(403).json({ error: 'You are not authorized to approve requests for this slot.' });
+    }
+
+    if (reservation.reservation_status !== 'pending') {
+      return res.status(400).json({ error: `Reservation request is already ${reservation.reservation_status}.` });
+    }
+
+    // 1. Approve this reservation and reject competing ones in DB
+    await ProductionScheduleReservation.approve(reservation.id, reservation.entry_id);
+
+    // 2. Lock the production slot entry as purchased
+    await ProductionScheduleEntry.markPurchased(reservation.entry_id, reservation.buyer_factory_id);
+
+    // 3. Send system notification to the winning buyer
+    try {
+      const buyerUserRes = await query('SELECT user_id FROM factories WHERE id = $1', [reservation.buyer_factory_id]);
+      if (buyerUserRes.rows[0]) {
+        const buyerUserId = buyerUserRes.rows[0].user_id;
+        await query(
+          `INSERT INTO notifications (user_id, title, message, type, link_url)
+           VALUES ($1, $2, $3, 'system', 'factory-profile.html')`,
+          [
+            buyerUserId,
+            'Reservation Approved! 🎉',
+            `Your request for ${reservation.quantity_kg}kg of ${reservation.material_type} from ${sellerFactory.name} was approved. Download your receipt in My Profile.`,
+          ]
+        );
+      }
+    } catch (notifErr) {
+      console.warn('[production.approveReservation] Failed to insert notification (non-fatal):', notifErr.message);
+    }
+
+    return res.json({ message: 'Reservation request approved successfully.' });
+  } catch (err) {
+    console.error('[production.approveReservation]', err);
+    return res.status(500).json({ error: 'Failed to approve reservation request.' });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// GET /api/listings/reservations/:id/receipt
+// ---------------------------------------------------------------------------
+async function downloadReceipt(req, res) {
+  try {
+    const reservationId = parseInt(req.params.id, 10);
+    if (isNaN(reservationId)) {
+      return res.status(400).json({ error: 'Invalid reservation ID.' });
+    }
+
+    const reservation = await ProductionScheduleReservation.findById(reservationId);
+    if (!reservation) {
+      return res.status(404).json({ error: 'Reservation not found.' });
+    }
+
+    // Verify requesting user is either the buyer or the seller
+    const userFactory = await Factory.findByUserId(req.user.id);
+    if (!userFactory) {
+      return res.status(400).json({ error: 'No factory profile found for this user.' });
+    }
+
+    const isBuyer = String(userFactory.id) === String(reservation.buyer_factory_id);
+    const isSeller = String(userFactory.id) === String(reservation.seller_factory_id);
+
+    if (!isBuyer && !isSeller) {
+      return res.status(403).json({ error: 'You are not authorized to access this receipt.' });
+    }
+
+    if (reservation.reservation_status !== 'approved') {
+      return res.status(400).json({ error: 'Receipt is only available for approved reservations.' });
+    }
+
     const { buffer, confirmationId } = await generatePurchaseConfirmationPdf({
-      entryId:        entry.id,
-      sellerName:     sellerFactory.name,
-      buyerName:      buyerFactory.name,
-      materialType:   entry.material_type,
-      quantityKg:     Number(entry.quantity_kg),
-      productionDate: entry.production_date,
-      source:         entry.source,
+      entryId:        reservation.entry_id,
+      sellerName:     reservation.seller_name,
+      buyerName:      reservation.buyer_name,
+      materialType:   reservation.material_type,
+      quantityKg:     Number(reservation.quantity_kg),
+      productionDate: reservation.production_date,
+      source:         reservation.source,
     });
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${confirmationId}.pdf"`);
     return res.send(buffer);
   } catch (err) {
-    console.error('[production.purchaseSlot]', err);
-    return res.status(500).json({ error: 'Failed to purchase slot.' });
+    console.error('[production.downloadReceipt]', err);
+    return res.status(500).json({ error: 'Failed to download receipt.' });
   }
 }
 
-module.exports = { uploadSchedule, searchSchedules, getFactorySchedule, purchaseSlot };
+module.exports = {
+  uploadSchedule,
+  searchSchedules,
+  getFactorySchedule,
+  requestSlotReservation,
+  getIncomingRequests,
+  getOutgoingRequests,
+  approveReservation,
+  downloadReceipt,
+};

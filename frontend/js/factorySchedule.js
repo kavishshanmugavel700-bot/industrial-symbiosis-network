@@ -150,9 +150,10 @@ document.addEventListener('DOMContentLoaded', () => {
         <div><strong>Slot Type:</strong> ${source === 'pdf' ? '✅ Confirmed' : '🤖 AI Forecast'}</div>
       </div>
       <p style="margin-top: 1rem; font-size: 0.85rem; color: var(--clr-text-muted);">
-        Clicking <strong>Reserve</strong> will mark this slot as purchased and download a PDF confirmation receipt.
+        Clicking <strong>Submit Request</strong> will send a booking request to the seller. You will be notified once they approve the reservation.
       </p>
     `;
+    modalConfirmBtn.textContent = 'Submit Reservation Request';
     modal.classList.add('open');
   }
 
@@ -171,45 +172,33 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!pendingEntryId) return;
 
     modalConfirmBtn.disabled  = true;
-    modalConfirmBtn.textContent = 'Processing…';
+    modalConfirmBtn.textContent = 'Submitting…';
 
     try {
       const token    = localStorage.getItem('isin_token');
-      const response = await fetch(`${API_BASE_URL}/api/listings/purchase`, {
+      const response = await fetch(`${API_BASE_URL}/api/listings/reserve`, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body:    JSON.stringify({ entryId: pendingEntryId }),
       });
 
+      const data = await response.json();
+
       if (!response.ok) {
-        const err = await response.json().catch(() => ({}));
-        throw new Error(err.error || 'Purchase failed');
+        throw new Error(data.error || 'Failed to submit request');
       }
 
-      // Trigger PDF download
-      const blob    = await response.blob();
-      const url     = window.URL.createObjectURL(blob);
-      const a       = document.createElement('a');
-      const cd      = response.headers.get('Content-Disposition') || '';
-      const fnMatch = cd.match(/filename="([^"]+)"/);
-      a.href        = url;
-      a.download    = fnMatch ? fnMatch[1] : `slot-confirmation-${pendingEntryId}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
-
-      notifications.showSuccess('Slot reserved! Confirmation PDF downloaded.');
+      notifications.showSuccess('Reservation request submitted! Waiting for seller approval.');
       modal.classList.remove('open');
       pendingEntryId = null;
 
       // Reload to show updated status
       await loadSchedule();
     } catch (err) {
-      notifications.showError(err.message || 'Failed to reserve slot.');
+      notifications.showError(err.message || 'Failed to submit request.');
     } finally {
       modalConfirmBtn.disabled  = false;
-      modalConfirmBtn.textContent = 'Reserve & Download Receipt';
+      modalConfirmBtn.textContent = 'Submit Reservation Request';
     }
   });
 });
