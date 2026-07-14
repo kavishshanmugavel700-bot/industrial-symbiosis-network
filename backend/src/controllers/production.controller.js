@@ -71,37 +71,40 @@ async function uploadSchedule(req, res) {
       .filter((d) => !isNaN(d));
     const maxPdfDate = dates.length > 0 ? new Date(Math.max(...dates)) : new Date();
 
-    // Get the first material type to drive the prediction
-    const primaryMaterial = extractedRows[0].material_type;
+    // Get all unique material types from the PDF schedule
+    const uniqueMaterials = [...new Set(extractedRows.map((r) => r.material_type))];
+    let totalPredictedAdded = 0;
 
-    let predictionResult = null;
-    try {
-      predictionResult = await aiClient.predictSurplus({
-        factoryId: factory.id,
-        productionSchedule: {},
-      });
-    } catch (predErr) {
-      console.warn('[production.uploadSchedule] predictSurplus failed (non-fatal):', predErr.message);
-    }
+    for (const material of uniqueMaterials) {
+      let predictionResult = null;
+      try {
+        predictionResult = await aiClient.predictSurplus({
+          factoryId: factory.id,
+          productionSchedule: {
+            material_type: material
+          },
+        });
+      } catch (predErr) {
+        console.warn(`[production.uploadSchedule] predictSurplus failed for ${material} (non-fatal):`, predErr.message);
+      }
 
-    if (predictionResult) {
-      const predQuantityKg   = predictionResult.quantityKg || extractedRows[0].quantity_kg;
-      const predConfidence   = predictionResult.confidenceScore || 0.7;
+      const predQuantityKg = (predictionResult && predictionResult.quantityKg) 
+        || (extractedRows.find((r) => r.material_type === material) || {}).quantity_kg 
+        || 1000;
 
-      // Advance the predicted date until it is strictly after the last PDF date.
-      let currentDate = new Date(predictionResult.predictedSurplusDate || maxPdfDate);
+      let currentDate = new Date((predictionResult && predictionResult.predictedSurplusDate) || maxPdfDate);
       const step = 14; // 2-week cadence for forecast slots
 
       while (currentDate <= maxPdfDate) {
         currentDate = new Date(currentDate.getTime() + step * 24 * 60 * 60 * 1000);
       }
 
-      // Insert 3 predicted slots at 2-week intervals
+      // Insert 3 predicted slots at 2-week intervals for this material
       const predictedEntries = [];
       for (let i = 0; i < 3; i++) {
         predictedEntries.push({
           factoryId:      factory.id,
-          materialType:   primaryMaterial,
+          materialType:   material,
           quantityKg:     predQuantityKg,
           productionDate: currentDate.toISOString(),
           source:         'predicted',
@@ -109,12 +112,13 @@ async function uploadSchedule(req, res) {
         currentDate = new Date(currentDate.getTime() + step * 24 * 60 * 60 * 1000);
       }
       await ProductionScheduleEntry.bulkInsert(predictedEntries);
+      totalPredictedAdded += 3;
     }
 
     return res.status(201).json({
       message: 'Production schedule uploaded and stored successfully.',
       pdfRowCount: extractedRows.length,
-      predictedRowsAdded: predictionResult ? 3 : 0,
+      predictedRowsAdded: totalPredictedAdded,
     });
   } catch (err) {
     console.error('[production.uploadSchedule]', err);
