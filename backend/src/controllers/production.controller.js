@@ -446,8 +446,8 @@ async function approveReservation(req, res) {
       return res.status(403).json({ error: 'You are not authorized to approve requests for this slot.' });
     }
 
-    if (reservation.reservation_status !== 'pending') {
-      return res.status(400).json({ error: `Reservation request is already ${reservation.reservation_status}.` });
+    if (reservation.status !== 'pending') {
+      return res.status(400).json({ error: `Reservation request is already ${reservation.status}.` });
     }
 
     // 1. Approve this reservation and reject competing ones in DB
@@ -510,7 +510,7 @@ async function downloadReceipt(req, res) {
       return res.status(403).json({ error: 'You are not authorized to access this receipt.' });
     }
 
-    if (reservation.reservation_status !== 'approved') {
+    if (reservation.status !== 'approved') {
       return res.status(400).json({ error: 'Receipt is only available for approved reservations.' });
     }
 
