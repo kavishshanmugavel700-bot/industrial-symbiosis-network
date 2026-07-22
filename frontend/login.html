@@ -85,6 +85,12 @@
       const errorBox = document.getElementById('error-box');
       const submitBtn = document.getElementById('submit-btn');
 
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('error') === 'expired') {
+        errorBox.textContent = 'Your session has expired. Please log in again.';
+        errorBox.style.display = 'block';
+      }
+
       form.addEventListener('submit', async (e) => {
         e.preventDefault();
         errorBox.style.display = 'none';

@@ -38,6 +38,14 @@ async function apiFetch(path, options = {}) {
     }
     
     if (!response.ok) {
+      if (response.status === 401) {
+        localStorage.removeItem('isin_token');
+        localStorage.removeItem('isin_user');
+        localStorage.removeItem('isin_factory');
+        window.location.href = 'login.html?error=expired';
+        // Throw a silent abort-like error to prevent downstream rendering
+        throw new Error('Session expired');
+      }
       const errorMessage = data && data.error ? data.error : `HTTP error! Status: ${response.status}`;
       const err = new Error(errorMessage);
       err.status = response.status;
